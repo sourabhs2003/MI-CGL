@@ -1,313 +1,335 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Bar,
   BarChart,
+  CartesianGrid,
   Cell,
   Line,
   LineChart,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts'
+import { motion } from 'framer-motion'
 import { useAuth } from '../context/AuthContext'
-import {
-  useMocks,
-  useSessions,
-} from '../hooks/useFirestoreData'
+import { useMocks, useSessions } from '../hooks/useFirestoreData'
 import { useUserProfile } from '../hooks/useUserProfile'
-import { BADGE_DEFS, computeEarnedBadgeIds } from '../lib/badges'
 import { lastNDaysKeys, todayKey } from '../lib/dates'
-import { buildInsights } from '../lib/insights'
 import { toMillis } from '../lib/firestoreTime'
-import { levelProgress } from '../lib/xp'
-import type { Subject } from '../types'
+import { generateAnalyticsInsight } from '../services/analyticsCoach'
 
-const PIE_COLORS = ['#5b8cff', '#7cffb2', '#ffb86b', '#ff7ab6']
+type AnalyticsTab = 'daily' | 'weekly' | 'monthly' | 'mocks' | 'sectional'
+
+const tabs: { key: AnalyticsTab; label: string }[] = [
+  { key: 'daily', label: 'Daily' },
+  { key: 'weekly', label: 'Weekly' },
+  { key: 'monthly', label: 'Monthly' },
+  { key: 'mocks', label: 'Mocks' },
+  { key: 'sectional', label: 'Sectional' },
+]
+
+function ChartTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean
+  payload?: Array<{ name?: string; value?: number; color?: string }>
+  label?: string | number
+}) {
+  if (!active || !payload?.length) return null
+
+  return (
+    <div className="chart-tooltip">
+      <strong>{label}</strong>
+      {payload.map((item) => (
+        <div key={`${item.name}-${item.value}`} className="chart-tooltip-row">
+          <span className="chart-tooltip-dot" style={{ backgroundColor: item.color }} />
+          <strong>{item.value}</strong>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export function DashboardPage() {
   const { user } = useAuth()
   const uid = user?.uid
   const { profile } = useUserProfile(uid)
-  const sessions = useSessions(uid, 500)
+  const sessions = useSessions(uid, 700)
   const mocks = useMocks(uid)
-  const tk = todayKey()
+  const [tab, setTab] = useState<AnalyticsTab>('daily')
+  const [insight, setInsight] = useState('Loading...')
 
-  const prog = levelProgress(profile?.xp ?? 0)
-
-  const weekBars = useMemo(() => {
-    const keys = lastNDaysKeys(7)
-    const map = new Map(keys.map((k) => [k, 0]))
-    for (const s of sessions) {
-      if (map.has(s.dayKey)) map.set(s.dayKey, (map.get(s.dayKey) ?? 0) + s.durationSec)
+  const dailyData = useMemo(() => {
+    const keys = lastNDaysKeys(10)
+    const map = new Map(keys.map((key) => [key, 0]))
+    for (const session of sessions) {
+      if (map.has(session.dayKey)) {
+        map.set(session.dayKey, (map.get(session.dayKey) ?? 0) + session.durationSec)
+      }
     }
-    return keys.map((k) => ({
-      day: k.slice(5),
-      hours: Number(((map.get(k) ?? 0) / 3600).toFixed(2)),
+    return keys.map((key) => ({
+      label: key.slice(5),
+      hours: Number(((map.get(key) ?? 0) / 3600).toFixed(2)),
     }))
   }, [sessions])
 
-  const mockTrend = useMemo(() => {
-    return [...mocks]
-      .filter((m) => m.kind !== 'sectional')
-      .sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt))
-      .slice(-20)
-      .map((m, i) => ({
-        idx: i + 1,
-        scorePct:
-          m.maxScore > 0 ? Math.round((m.score / m.maxScore) * 1000) / 10 : 0,
-        accuracy: m.accuracyPct,
-      }))
-  }, [mocks])
+  const weeklyData = useMemo(() => {
+    const keys = lastNDaysKeys(7)
+    const map = new Map(keys.map((key) => [key, 0]))
+    for (const session of sessions) {
+      if (map.has(session.dayKey)) {
+        map.set(session.dayKey, (map.get(session.dayKey) ?? 0) + session.durationSec)
+      }
+    }
+    return keys.map((key) => ({
+      label: key.slice(5),
+      hours: Number(((map.get(key) ?? 0) / 3600).toFixed(2)),
+    }))
+  }, [sessions])
 
-  const sectionalBySubject = useMemo(() => {
-    const by: Record<string, { idx: number; score: number; acc: number }[]> = {}
-    const sect = [...mocks]
-      .filter((m) => m.kind === 'sectional')
-      .sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt))
-    for (const m of sect) {
-      const key = m.subject
-      by[key] ??= []
-      by[key].push({
-        idx: by[key]!.length + 1,
-        score: m.score,
-        acc: m.accuracyPct,
-      })
+  const monthlyData = useMemo(() => {
+    const keys = lastNDaysKeys(30)
+    const map = new Map(keys.map((key) => [key, 0]))
+    for (const session of sessions) {
+      if (map.has(session.dayKey)) {
+        map.set(session.dayKey, (map.get(session.dayKey) ?? 0) + session.durationSec)
+      }
     }
-    return by
-  }, [mocks])
-
-  const subjectPie = useMemo(() => {
-    const cutoff = Date.now() - 30 * 24 * 3600 * 1000
-    const totals: Record<Subject, number> = {
-      Maths: 0,
-      English: 0,
-      Reasoning: 0,
-      GS: 0,
-      Mixed: 0,
-    }
-    for (const s of sessions) {
-      const t = new Date(s.dayKey + 'T12:00:00').getTime()
-      if (t >= cutoff) totals[s.subject] += s.durationSec
-    }
-    return (Object.entries(totals) as [Subject, number][])
-      .filter(([, v]) => v > 0)
-      .map(([name, value]) => ({
-        name,
-        value: Number((value / 3600).toFixed(2)),
+    return keys
+      .filter((_, index) => index % 3 === 0)
+      .map((key) => ({
+        label: key.slice(5),
+        hours: Number(((map.get(key) ?? 0) / 3600).toFixed(2)),
       }))
   }, [sessions])
 
-  const insights = useMemo(
-    () =>
-      buildInsights({
-        sessions,
-        mocks,
-        todayKey: tk,
-      }),
-    [sessions, mocks, tk],
-  )
+  const mockData = useMemo(() => {
+    return [...mocks]
+      .filter((mock) => mock.kind !== 'sectional')
+      .sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt))
+      .map((mock, index) => ({
+        label: `${index + 1}`,
+        score: mock.maxScore > 0 ? Math.round((mock.score / mock.maxScore) * 100) : 0,
+      }))
+  }, [mocks])
 
-  const earned = useMemo(() => {
-    if (!profile) return new Set<string>()
-    return computeEarnedBadgeIds({
-      profile,
+  const sectionalData = useMemo(() => {
+    const grouped = {
+      Maths: [] as number[],
+      English: [] as number[],
+      Reasoning: [] as number[],
+      GS: [] as number[],
+    }
+
+    for (const mock of mocks) {
+      if (mock.kind !== 'sectional') continue
+      if (mock.subject in grouped) {
+        grouped[mock.subject as keyof typeof grouped].push(mock.accuracyPct)
+      }
+    }
+
+    return Object.entries(grouped).map(([subject, scores]) => ({
+      label: subject,
+      score: scores.length
+        ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length)
+        : 0,
+    }))
+  }, [mocks])
+
+  const totals = useMemo(() => {
+    const totalStudyHours = sessions.reduce((sum, session) => sum + session.durationSec, 0) / 3600
+    const uniqueDays = new Set(sessions.map((session) => session.dayKey)).size || 1
+    const avgDailyHours = totalStudyHours / uniqueDays
+    const bestDay = dailyData.reduce((best, day) => (day.hours > best.hours ? day : best), {
+      label: todayKey().slice(5),
+      hours: 0,
+    })
+    const fullMocks = mocks.filter((mock) => mock.kind !== 'sectional')
+    const avgMockScore = fullMocks.length
+      ? Math.round(
+          fullMocks.reduce((sum, mock) => sum + (mock.maxScore > 0 ? (mock.score / mock.maxScore) * 100 : 0), 0) /
+            fullMocks.length,
+        )
+      : 0
+
+    return [
+      { label: 'Hours', value: totalStudyHours.toFixed(1) },
+      { label: 'Avg', value: avgDailyHours.toFixed(1) },
+      { label: 'Best', value: `${bestDay.label}` },
+      { label: 'Streak', value: `${profile?.streak ?? 0}d` },
+      { label: 'Mocks', value: `${mocks.length}` },
+      { label: 'Avg Mock', value: `${avgMockScore}%` },
+    ]
+  }, [dailyData, mocks, profile?.streak, sessions])
+
+  useEffect(() => {
+    let active = true
+    void generateAnalyticsInsight({
       sessions,
       mocks,
+      streak: profile?.streak ?? 0,
+    }).then((nextInsight) => {
+      if (active) setInsight(nextInsight)
     })
-  }, [profile, sessions, mocks])
+    return () => {
+      active = false
+    }
+  }, [mocks, profile?.streak, sessions])
+
+  const chartConfig = useMemo(() => {
+    switch (tab) {
+      case 'daily':
+        return {
+          title: 'Daily',
+          data: dailyData,
+          render: (
+            <BarChart data={dailyData} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+              <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
+              <XAxis dataKey="label" stroke="#7f8ea3" fontSize={12} axisLine={false} tickLine={false} />
+              <YAxis stroke="#7f8ea3" fontSize={12} axisLine={false} tickLine={false} />
+              <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
+              <Bar dataKey="hours" radius={[10, 10, 0, 0]} animationDuration={450} animationEasing="ease-in-out">
+                {dailyData.map((entry, index) => (
+                  <Cell key={`${entry.label}-${index}`} fill={index === dailyData.length - 1 ? '#22c55e' : '#38bdf8'} />
+                ))}
+              </Bar>
+            </BarChart>
+          ),
+        }
+      case 'weekly':
+        return {
+          title: 'Weekly',
+          data: weeklyData,
+          render: (
+            <BarChart data={weeklyData} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+              <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
+              <XAxis dataKey="label" stroke="#7f8ea3" fontSize={12} axisLine={false} tickLine={false} />
+              <YAxis stroke="#7f8ea3" fontSize={12} axisLine={false} tickLine={false} />
+              <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
+              <Bar dataKey="hours" radius={[10, 10, 0, 0]} fill="#facc15" animationDuration={450} animationEasing="ease-in-out" />
+            </BarChart>
+          ),
+        }
+      case 'monthly':
+        return {
+          title: 'Monthly',
+          data: monthlyData,
+          render: (
+            <LineChart data={monthlyData} margin={{ top: 10, right: 8, left: -18, bottom: 0 }}>
+              <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
+              <XAxis dataKey="label" stroke="#7f8ea3" fontSize={12} axisLine={false} tickLine={false} />
+              <YAxis stroke="#7f8ea3" fontSize={12} axisLine={false} tickLine={false} />
+              <Tooltip content={<ChartTooltip />} />
+              <Line
+                type="monotone"
+                dataKey="hours"
+                stroke="#22c55e"
+                strokeWidth={3}
+                dot={false}
+                activeDot={{ r: 5, fill: '#22c55e', stroke: '#04110a', strokeWidth: 2 }}
+                animationDuration={500}
+                animationEasing="ease-in-out"
+              />
+            </LineChart>
+          ),
+        }
+      case 'mocks':
+        return {
+          title: 'Mocks',
+          data: mockData,
+          render: (
+            <LineChart data={mockData} margin={{ top: 10, right: 8, left: -18, bottom: 0 }}>
+              <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
+              <XAxis dataKey="label" stroke="#7f8ea3" fontSize={12} axisLine={false} tickLine={false} />
+              <YAxis stroke="#7f8ea3" fontSize={12} domain={[0, 100]} axisLine={false} tickLine={false} />
+              <Tooltip content={<ChartTooltip />} />
+              <Line
+                type="monotone"
+                dataKey="score"
+                stroke="#ef4444"
+                strokeWidth={3}
+                dot={false}
+                activeDot={{ r: 5, fill: '#ef4444', stroke: '#180607', strokeWidth: 2 }}
+                animationDuration={500}
+                animationEasing="ease-in-out"
+              />
+            </LineChart>
+          ),
+        }
+      case 'sectional':
+      default:
+        return {
+          title: 'Sectional',
+          data: sectionalData,
+          render: (
+            <BarChart data={sectionalData} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+              <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
+              <XAxis dataKey="label" stroke="#7f8ea3" fontSize={12} axisLine={false} tickLine={false} />
+              <YAxis stroke="#7f8ea3" fontSize={12} domain={[0, 100]} axisLine={false} tickLine={false} />
+              <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
+              <Bar dataKey="score" radius={[10, 10, 0, 0]} animationDuration={450} animationEasing="ease-in-out">
+                {sectionalData.map((entry, index) => (
+                  <Cell
+                    key={`${entry.label}-${index}`}
+                    fill={['#22c55e', '#38bdf8', '#facc15', '#ef4444'][index % 4]}
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          ),
+        }
+    }
+  }, [dailyData, mockData, monthlyData, sectionalData, tab, weeklyData])
 
   return (
-    <>
-      <header className="top-bar">
-        <div>
-          <p className="eyebrow">Analytics</p>
-          <h1>Dashboard</h1>
-        </div>
-        <div className="xp-block">
-          <div className="xp-meta">
-            <span className="label">Level {prog.level}</span>
-            <span className="value">{profile?.xp ?? 0} XP</span>
-          </div>
-          <div className="xp-bar" aria-hidden>
-            <div className="xp-fill" style={{ width: `${prog.pct}%` }} />
-          </div>
-          <p className="xp-hint">
-            Streak {profile?.streak ?? 0} days · {prog.level >= 100 ? 'Max level' : `${prog.xpForNext} XP to next`}
-          </p>
-        </div>
-      </header>
-
-      <section className="card insights-block">
-        <h2>Smart insights</h2>
-        <ul className="insight-list">
-          {insights.map((t) => (
-            <li key={t}>{t}</li>
-          ))}
-        </ul>
-      </section>
-
-      <div className="chart-grid">
-        <section className="card chart-card">
-          <h2>Daily study (hours)</h2>
-          <p className="card-sub">Rolling 7 days</p>
-          <div className="chart-wrap">
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={weekBars}>
-                <XAxis dataKey="day" stroke="#8b95a8" fontSize={12} />
-                <YAxis stroke="#8b95a8" fontSize={12} />
-                <Tooltip
-                  contentStyle={{
-                    background: '#1c2230',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                  }}
-                />
-                <Bar dataKey="hours" fill="#5b8cff" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </section>
-
-        <section className="card chart-card">
-          <h2>Subject mix (30d)</h2>
-          <p className="card-sub">Hours by subject</p>
-          <div className="chart-wrap">
-            {subjectPie.length === 0 ? (
-              <p className="muted">Log sessions to see distribution.</p>
-            ) : (
-              <ResponsiveContainer width="100%" height={260}>
-                <PieChart>
-                  <Pie
-                    data={subjectPie}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={50}
-                    outerRadius={90}
-                    paddingAngle={2}
-                  >
-                    {subjectPie.map((_, i) => (
-                      <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      background: '#1c2230',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                    }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </section>
-
-        <section className="card chart-card wide">
-          <h2>Mock trajectory</h2>
-          <p className="card-sub">Score % and accuracy (chronological)</p>
-          <div className="chart-wrap">
-            {mockTrend.length === 0 ? (
-              <p className="muted">Add mocks to see trends.</p>
-            ) : (
-              <ResponsiveContainer width="100%" height={280}>
-                <LineChart data={mockTrend}>
-                  <XAxis dataKey="idx" stroke="#8b95a8" fontSize={12} />
-                  <YAxis stroke="#8b95a8" fontSize={12} domain={[0, 100]} />
-                  <Tooltip
-                    contentStyle={{
-                      background: '#1c2230',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                    }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="scorePct"
-                    stroke="#5b8cff"
-                    strokeWidth={2}
-                    dot={false}
-                    name="Score %"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="accuracy"
-                    stroke="#7cffb2"
-                    strokeWidth={2}
-                    dot={false}
-                    name="Accuracy %"
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </section>
-
-        <section className="card chart-card wide">
-          <h2>Sectional mocks</h2>
-          <p className="card-sub">Separate curves per subject</p>
-          <div className="chart-wrap">
-            {Object.keys(sectionalBySubject).length === 0 ? (
-              <p className="muted">Add sectional mocks to see subject graphs.</p>
-            ) : (
-              <div className="sectional-grid">
-                {Object.entries(sectionalBySubject).map(([sub, data]) => (
-                  <div key={sub} className="sectional-card">
-                    <div className="sectional-head">
-                      <strong>{sub}</strong>
-                      <span className="muted tiny">{data.length} mocks</span>
-                    </div>
-                    <ResponsiveContainer width="100%" height={220}>
-                      <LineChart data={data}>
-                        <XAxis dataKey="idx" stroke="#8b95a8" fontSize={12} />
-                        <YAxis stroke="#8b95a8" fontSize={12} domain={[0, 100]} />
-                        <Tooltip
-                          contentStyle={{
-                            background: '#1c2230',
-                            border: '1px solid rgba(255,255,255,0.1)',
-                          }}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="score"
-                          stroke="#ffb86b"
-                          strokeWidth={2}
-                          dot={false}
-                          name="Score"
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="acc"
-                          stroke="#7cffb2"
-                          strokeWidth={2}
-                          dot={false}
-                          name="Accuracy %"
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
+    <main className="analytics-shell">
+      <div className="analytics-tabs" role="tablist" aria-label="Analytics">
+        {tabs.map((item) => (
+          <motion.button
+            key={item.key}
+            type="button"
+            className={item.key === tab ? 'analytics-tab active' : 'analytics-tab'}
+            whileTap={{ scale: 0.97 }}
+            onClick={() => setTab(item.key)}
+          >
+            {item.label}
+          </motion.button>
+        ))}
       </div>
 
-      <section className="card badges-card">
-        <h2>Badges</h2>
-        <div className="badge-grid">
-          {BADGE_DEFS.map((b) => (
-            <div
-              key={b.id}
-              className={`badge-pill ${earned.has(b.id) ? 'earned' : ''}`}
-            >
-              <strong>{b.label}</strong>
-              <span>{b.description}</span>
+      <section className="card analytics-summary">
+        <div className="summary-grid">
+          {totals.map((item) => (
+            <div key={item.label} className="summary-card">
+              <span className="summary-label">{item.label}</span>
+              <strong className="summary-value">{item.value}</strong>
             </div>
           ))}
         </div>
       </section>
-    </>
+
+      <section className="card analytics-chart-card">
+        <div className="card-head">
+          <h2>{chartConfig.title}</h2>
+        </div>
+        <div className="chart-scroll">
+          <div className="chart-panel">
+            <ResponsiveContainer width="100%" height={280}>
+              {chartConfig.render}
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </section>
+
+      <section className="card analytics-insight-card">
+        <div className="card-head">
+          <h2>AI</h2>
+        </div>
+        <p className="analytics-insight-text">{insight}</p>
+      </section>
+    </main>
   )
 }

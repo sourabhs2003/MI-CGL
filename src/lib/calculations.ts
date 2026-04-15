@@ -1,6 +1,6 @@
 import type { Subject } from '../types'
 
-export const SUBJECTS: Subject[] = ['Maths', 'GS', 'English', 'Reasoning'] as const
+export const SUBJECTS: Subject[] = ['Maths', 'GS', 'English', 'Reasoning', 'Mock'] as const
 
 export function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n))
@@ -16,7 +16,6 @@ export function timeToMinutes(hhmm: string): number | null {
   return hh * 60 + mm
 }
 
-/** Returns duration minutes. If end < start, assumes wrap to next day. */
 export function durationMinutes(start: string, end: string): number | null {
   const s = timeToMinutes(start)
   const e = timeToMinutes(end)
@@ -28,4 +27,3 @@ export function durationMinutes(start: string, end: string): number | null {
 export function minutesToSec(min: number): number {
   return Math.max(0, Math.round(min)) * 60
 }
-

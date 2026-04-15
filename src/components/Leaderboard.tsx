@@ -1,21 +1,8 @@
-import {
-  collection,
-  doc,
-  getCountFromServer,
-  getDoc,
-  getDocs,
-  limit,
-  orderBy,
-  query,
-} from 'firebase/firestore'
 import { useEffect, useMemo, useState } from 'react'
-import { getDb } from '../firebase'
-import { lastNDaysKeys } from '../lib/dates'
-import { USERS } from '../lib/auth'
-import { profileFromSnap } from '../services/userProfile'
-import { motion } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
+import { ArrowDown, ArrowUp, Crown, Medal, X, Zap } from 'lucide-react'
 
-type Row = {
+export type LeaderboardRow = {
   username: string
   uid: string
   xp: number
@@ -23,203 +10,244 @@ type Row = {
   weekHours: number
   mockCount: number
   lastMock: string
+  totalSessions: number
+  lastActivity: string
 }
 
-function competitiveMessage(rows: Row[], meUid: string | null): string | null {
+type Props = {
+  rows: LeaderboardRow[]
+  loading: boolean
+  meUid?: string | null
+  todayXp?: number
+}
+
+function getSortedRows(rows: LeaderboardRow[]) {
+  return rows.slice().sort((a, b) => b.weekHours - a.weekHours || b.xp - a.xp)
+}
+
+function buildCompetitiveMessage(rows: LeaderboardRow[], meUid: string | null | undefined, rankDelta: number) {
   if (!meUid) return null
-  const sorted = rows.slice().sort((a, b) => b.weekHours - a.weekHours || b.xp - a.xp)
-  const me = sorted.find((r) => r.uid === meUid)
-  if (!me) return null
-  const top = sorted[0]
-  if (!top) return null
-  if (top.uid === me.uid) {
-    const second = sorted[1]
-    if (!second) return 'You dominate. Stay ruthless.'
-    const gap = Math.max(0, top.weekHours - second.weekHours)
-    return gap < 0.6
-      ? `They're close. Push 30 mins to lock #1.`
-      : `You lead by ${gap.toFixed(1)}h. Don't slow down.`
-  }
-  const gap = Math.max(0, top.weekHours - me.weekHours)
-  const mins = Math.ceil(gap * 60)
-  if (mins <= 30) return `You're close. 30 mins to take #1.`
-  if (mins <= 120) return `Pressure: ${top.username} is ahead by ${mins} min.`
-  return `Behind by ${(mins / 60).toFixed(1)}h. Start now.`
+  const meIndex = rows.findIndex((row) => row.uid === meUid)
+  if (meIndex === -1) return null
+
+  const me = rows[meIndex]
+  const nextUp = meIndex > 0 ? rows[meIndex - 1] : null
+
+  if (rankDelta > 0) return 'Dropped rank'
+  if (meIndex === 0) return 'You lead'
+  if (!nextUp) return `#${meIndex + 1}`
+
+  const gapMinutes = Math.max(10, Math.round((nextUp.weekHours - me.weekHours) * 60))
+  return `#${meIndex + 1} · ${gapMinutes} min to #${meIndex}`
 }
 
-export function Leaderboard() {
-  const [rows, setRows] = useState<Row[]>([])
-  const [loading, setLoading] = useState(true)
+function getRowTone(index: number) {
+  if (index === 0) return 'gold'
+  if (index === 1) return 'silver'
+  if (index === 2) return 'bronze'
+  return 'base'
+}
 
-  const meUid = useMemo(() => {
-    try {
-      const raw = localStorage.getItem('user')
-      if (!raw) return null
-      const u = JSON.parse(raw) as { uid?: string }
-      return typeof u.uid === 'string' ? u.uid : null
-    } catch {
-      return null
-    }
-  }, [])
+export function Leaderboard({ rows, loading, meUid, todayXp = 0 }: Props) {
+  const sorted = useMemo(() => getSortedRows(rows), [rows])
+  const [rankDelta, setRankDelta] = useState(0)
+  const [previousRank, setPreviousRank] = useState<number | null>(null)
+  const [selectedUser, setSelectedUser] = useState<LeaderboardRow | null>(null)
+
+  const meIndex = sorted.findIndex((row) => row.uid === meUid)
+  const nextUp = meIndex > 0 ? sorted[meIndex - 1] : null
+  const gapToNextMinutes =
+    meIndex > 0 && nextUp && sorted[meIndex]
+      ? Math.max(0, Math.round((nextUp.weekHours - sorted[meIndex].weekHours) * 60))
+      : 0
+  const message = buildCompetitiveMessage(sorted, meUid, rankDelta)
+  const leaderWeekHours = sorted[0]?.weekHours ?? 0
+  const selectedRank =
+    selectedUser ? sorted.findIndex((row) => row.uid === selectedUser.uid) + 1 : 0
+  const selectedProgress =
+    selectedUser && leaderWeekHours > 0
+      ? Math.min(100, (selectedUser.weekHours / leaderWeekHours) * 100)
+      : 0
 
   useEffect(() => {
-    let cancelled = false
-    const db = getDb()
-    const weekKeys = new Set(lastNDaysKeys(7))
-
-    async function load() {
-      setLoading(true)
-      try {
-      const out: Row[] = []
-      for (const def of USERS) {
-        let xp = 0
-        let streak = 0
-        try {
-          const pref = await getDoc(doc(db, 'users', def.uid))
-          const p = profileFromSnap(
-            pref.data() as Record<string, unknown> | undefined,
-          )
-          xp = p.xp
-          streak = p.streak
-        } catch {
-          /* empty profile */
-        }
-
-        let mockCount = 0
-        let lastMock = '—'
-        try {
-          const mc = await getCountFromServer(
-            collection(db, `users/${def.uid}/mocks`),
-          )
-          mockCount = mc.data().count
-        } catch {
-          /* */
-        }
-        try {
-          const mq = query(
-            collection(db, `users/${def.uid}/mocks`),
-            orderBy('createdAt', 'desc'),
-            limit(1),
-          )
-          const mqSnap = await getDocs(mq)
-          if (!mqSnap.empty) {
-            const m = mqSnap.docs[0].data() as Record<string, unknown>
-            const score = Number(m.score) || 0
-            const maxS = Number(m.maxScore) || 1
-            const pct = Math.round((score / maxS) * 1000) / 10
-            lastMock = `${pct}% · ${score}/${maxS}`
-          }
-        } catch {
-          /* missing index */
-        }
-
-        let weekSec = 0
-        try {
-          const sq = query(
-            collection(db, `users/${def.uid}/sessions`),
-            orderBy('endedAt', 'desc'),
-            limit(200),
-          )
-          const ss = await getDocs(sq)
-          ss.forEach((d) => {
-            const x = d.data() as Record<string, unknown>
-            const dk = String(x.dayKey ?? '')
-            if (weekKeys.has(dk)) weekSec += Number(x.durationSec) || 0
-          })
-        } catch {
-          /* */
-        }
-
-        out.push({
-          username: def.username,
-          uid: def.uid,
-          xp,
-          streak,
-          weekHours: Math.round((weekSec / 3600) * 10) / 10,
-          mockCount,
-          lastMock,
-        })
-      }
-      if (!cancelled) setRows(out)
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
+    if (meIndex === -1) return
+    const currentRank = meIndex + 1
+    if (previousRank !== null && previousRank !== currentRank) {
+      setRankDelta(previousRank - currentRank)
     }
-
-    void load()
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  const msg = useMemo(() => competitiveMessage(rows, meUid), [rows, meUid])
-
-  const getRankBadge = (idx: number) => {
-    if (idx === 0) return '🥇'
-    if (idx === 1) return '🥈'
-    if (idx === 2) return '🥉'
-    return `#${idx + 1}`
-  }
+    setPreviousRank(currentRank)
+  }, [meIndex, previousRank])
 
   return (
-    <section className="card leaderboard-card">
-      <h2>Squad leaderboard</h2>
-      <p className="card-sub">Stay ahead or fall behind.</p>
-      {msg ? <p className="lb-msg">{msg}</p> : null}
-      {loading ? (
-        <p className="muted">Loading stats…</p>
-      ) : (
-        <div className="table-wrap">
-          <table className="data-table leaderboard-table">
-            <thead>
-              <tr>
-                <th>Rank</th>
-                <th>User</th>
-                <th>XP</th>
-                <th>Streak</th>
-                <th>7d hrs</th>
-                <th>Mocks</th>
-                <th>Latest mock</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows
-                .slice()
-                .sort((a, b) => b.weekHours - a.weekHours || b.xp - a.xp)
-                .map((r, idx) => {
-                  const top = idx === 0
-                  const isMe = meUid === r.uid
-                  return (
-                    <motion.tr
-                      key={r.uid}
-                      layout
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ type: 'spring', stiffness: 520, damping: 42, delay: idx * 0.05 }}
-                      className={top ? 'top-row' : isMe ? 'me-row' : ''}
-                    >
-                      <td>
-                        <span className="lb-rank-badge">{getRankBadge(idx)}</span>
-                      </td>
-                      <td>
-                        <div className="lb-user">
-                          <div>
-                            <strong>{r.username}</strong>
-                          </div>
-                        </div>
-                      </td>
-                      <td>{r.xp}</td>
-                      <td>{r.streak}d</td>
-                      <td>{r.weekHours}</td>
-                      <td>{r.mockCount}</td>
-                      <td>{r.lastMock}</td>
-                    </motion.tr>
-                  )
-                })}
-            </tbody>
-          </table>
+    <>
+      <motion.section
+        className="card leaderboard-card"
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.24, ease: 'easeInOut' }}
+      >
+        <div className="leaderboard-header">
+          <h2>Leaderboard</h2>
+          <div className="leaderboard-xp-chip">
+            <Zap size={14} />
+            <span>+{todayXp}</span>
+          </div>
         </div>
-      )}
-    </section>
+
+        {message ? <p className="lb-msg">{message}</p> : null}
+
+        {meIndex > 0 ? (
+          <div className="leaderboard-gap-card">
+            <span>Next rank</span>
+            <strong>{gapToNextMinutes} min</strong>
+          </div>
+        ) : null}
+
+        {loading ? (
+          <p className="muted">Loading...</p>
+        ) : (
+          <div className="leaderboard-scroll" role="list" aria-label="Leaderboard">
+            {sorted.map((row, index) => {
+              const isMe = row.uid === meUid
+              const tone = getRowTone(index)
+              return (
+                <motion.button
+                  key={row.uid}
+                  layout
+                  type="button"
+                  role="listitem"
+                  className={`leaderboard-row leaderboard-${tone}${isMe ? ' me-row' : ''}`}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.22, ease: 'easeInOut', delay: index * 0.03 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => setSelectedUser(row)}
+                >
+                  <div className="leaderboard-rank-col">
+                    <span className="leaderboard-rank-number">#{index + 1}</span>
+                    {index === 0 ? (
+                      <Crown size={14} className="leaderboard-rank-icon" />
+                    ) : (
+                      <Medal size={14} className="leaderboard-rank-icon" />
+                    )}
+                  </div>
+
+                  <div className="leaderboard-content">
+                    <div className="leaderboard-name-row">
+                      <strong className="leaderboard-name">{row.username}</strong>
+                      <div className="leaderboard-badges">
+                        {isMe ? <span className="leaderboard-tag you">You</span> : null}
+                        {index === 0 ? <span className="leaderboard-tag top">Leader</span> : null}
+                      </div>
+                    </div>
+
+                    <div className="leaderboard-stats-grid">
+                      <span>XP {row.xp}</span>
+                      <span>{row.streak}d</span>
+                      <span>{row.weekHours.toFixed(1)}h</span>
+                    </div>
+                  </div>
+
+                  {isMe && rankDelta !== 0 ? (
+                    <div className={`leaderboard-shift ${rankDelta > 0 ? 'up' : 'down'}`}>
+                      {rankDelta > 0 ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
+                    </div>
+                  ) : null}
+                </motion.button>
+              )
+            })}
+          </div>
+        )}
+      </motion.section>
+
+      <AnimatePresence>
+        {selectedUser ? (
+          <>
+            <motion.div
+              className="sheet-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedUser(null)}
+            />
+            <motion.section
+              className="profile-sheet"
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ duration: 0.28, ease: 'easeInOut' }}
+            >
+              <div className="sheet-head">
+                <div>
+                  <div className="sheet-label">Profile</div>
+                  <h3>{selectedUser.username}</h3>
+                </div>
+                <button
+                  type="button"
+                  className="sheet-close"
+                  onClick={() => setSelectedUser(null)}
+                  aria-label="Close profile"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="sheet-rank-row">
+                <div className="sheet-rank-pill">#{selectedRank}</div>
+                <div className="sheet-badges">
+                  {selectedUser.uid === meUid ? <span className="leaderboard-tag you">You</span> : null}
+                  {selectedRank === 1 ? <span className="leaderboard-tag top">Leader</span> : null}
+                </div>
+              </div>
+
+              <div className="sheet-stats-grid">
+                <div className="sheet-stat">
+                  <span className="sheet-stat-label">XP</span>
+                  <strong>{selectedUser.xp}</strong>
+                </div>
+                <div className="sheet-stat">
+                  <span className="sheet-stat-label">Streak</span>
+                  <strong>{selectedUser.streak}d</strong>
+                </div>
+                <div className="sheet-stat">
+                  <span className="sheet-stat-label">7d</span>
+                  <strong>{selectedUser.weekHours.toFixed(1)}h</strong>
+                </div>
+                <div className="sheet-stat">
+                  <span className="sheet-stat-label">Sessions</span>
+                  <strong>{selectedUser.totalSessions}</strong>
+                </div>
+              </div>
+
+              <div className="sheet-progress-block">
+                <div className="sheet-progress-head">
+                  <span className="sheet-stat-label">Progress</span>
+                  <strong>{Math.round(selectedProgress)}%</strong>
+                </div>
+                <div className="sheet-progress-bar">
+                  <motion.div
+                    className="sheet-progress-fill"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${selectedProgress}%` }}
+                    transition={{ duration: 0.32, ease: 'easeInOut' }}
+                  />
+                </div>
+              </div>
+
+              <div className="sheet-meta-list">
+                <div className="sheet-meta-row">
+                  <span className="sheet-stat-label">Last activity</span>
+                  <strong>{selectedUser.lastActivity}</strong>
+                </div>
+                <div className="sheet-meta-row">
+                  <span className="sheet-stat-label">Last mock</span>
+                  <strong>{selectedUser.lastMock}</strong>
+                </div>
+              </div>
+            </motion.section>
+          </>
+        ) : null}
+      </AnimatePresence>
+    </>
   )
 }

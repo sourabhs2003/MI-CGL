@@ -4,45 +4,38 @@ export function SplashScreen() {
   return (
     <motion.div
       className="splash-screen"
-      initial={{ opacity: 1 }}
+      initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.3 }}
+      transition={{ duration: 0.28, ease: 'easeInOut' }}
     >
       <motion.div
         className="splash-core"
-        initial={{ scale: 0.8, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ duration: 1.5, ease: 'easeOut' }}
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.7, ease: 'easeInOut' }}
       >
         <motion.div
           className="splash-glow"
-          animate={{
-            boxShadow: [
-              '0 0 20px rgba(34, 197, 94, 0.3)',
-              '0 0 40px rgba(34, 197, 94, 0.5)',
-              '0 0 20px rgba(34, 197, 94, 0.3)',
-            ],
-          }}
-          transition={{
-            duration: 1.5,
-            repeat: Infinity,
-            ease: 'easeInOut',
-          }}
+          animate={{ opacity: [0.55, 0.9, 0.72], scale: [0.98, 1.03, 1] }}
+          transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+        />
+        <motion.img
+          src="/icon.png"
+          alt="MI CGL Pro"
+          className="splash-logo"
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.75, ease: 'easeInOut', delay: 0.08 }}
+        />
+        <motion.div
+          className="splash-copy"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: 'easeInOut', delay: 0.18 }}
         >
-          <motion.img
-            src="/icon.png"
-            alt="MI CGL"
-            className="splash-logo"
-            animate={{
-              scale: [0.8, 1.1, 1],
-              opacity: [0, 1],
-            }}
-            transition={{
-              duration: 1.5,
-              ease: 'easeOut',
-            }}
-          />
+          <p className="splash-eyebrow">SSC CGL Command Center</p>
+          <p className="splash-text">MI CGL Pro</p>
         </motion.div>
       </motion.div>
     </motion.div>

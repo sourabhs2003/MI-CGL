@@ -1,53 +1,48 @@
 import { useMemo } from 'react'
 import { motion } from 'framer-motion'
-import { Clock, Target } from 'lucide-react'
+import { Clock3, Target } from 'lucide-react'
 
 export function Countdown() {
   const countdownData = useMemo(() => {
     const now = new Date()
     const examDate = new Date('2027-06-01')
     const syllabusDeadline = new Date('2026-12-31')
-    
+
     const daysToExam = Math.ceil((examDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
     const daysToSyllabus = Math.ceil((syllabusDeadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
-    
+
     return {
       daysToExam: Math.max(0, daysToExam),
-      daysToSyllabus: Math.max(0, daysToSyllabus)
+      daysToSyllabus: Math.max(0, daysToSyllabus),
     }
   }, [])
 
-  const getMessage = () => {
-    if (countdownData.daysToSyllabus < 60) {
-      return 'Critical – Push 2 hours daily'
-    } else if (countdownData.daysToSyllabus < 120) {
-      return 'Behind – Push 1 hour more'
-    } else if (countdownData.daysToSyllabus < 180) {
-      return 'Stay consistent – You can do it'
-    } else {
-      return 'Ahead – Keep the momentum'
-    }
+  function getMessage() {
+    if (countdownData.daysToSyllabus < 60) return 'Critical window. Push two focused hours daily.'
+    if (countdownData.daysToSyllabus < 120) return 'Time to tighten the routine and close gaps.'
+    if (countdownData.daysToSyllabus < 180) return 'You are on track. Stay consistent.'
+    return 'Early advantage. Build depth before the pressure starts.'
   }
 
   return (
     <motion.section
       className="card countdown-card compact"
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 18 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4 }}
+      transition={{ duration: 0.35 }}
     >
       <div className="card-head">
-        <h2>CGL 2027</h2>
-        <p className="card-sub">Time is running. Stay consistent.</p>
+        <h2>CGL countdown</h2>
+        <p className="card-sub">A clear clock for exam day and syllabus closure.</p>
       </div>
 
       <div className="countdown-grid">
         <div className="countdown-item">
           <div className="countdown-icon">
-            <Clock size={18} />
+            <Clock3 size={18} />
           </div>
           <div className="countdown-content">
-            <span className="countdown-label">Days Left</span>
+            <span className="countdown-label">Exam Day</span>
             <span className="countdown-value">{countdownData.daysToExam}</span>
           </div>
         </div>
@@ -57,7 +52,7 @@ export function Countdown() {
             <Target size={18} />
           </div>
           <div className="countdown-content">
-            <span className="countdown-label">Syllabus</span>
+            <span className="countdown-label">Syllabus Lock</span>
             <span className="countdown-value">{countdownData.daysToSyllabus}</span>
           </div>
         </div>
@@ -67,7 +62,7 @@ export function Countdown() {
         className="countdown-message"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ delay: 0.3 }}
+        transition={{ delay: 0.16 }}
       >
         {getMessage()}
       </motion.p>

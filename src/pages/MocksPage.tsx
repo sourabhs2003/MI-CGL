@@ -1,9 +1,9 @@
+import { FullMockForm } from '../components/FullMockForm'
+import { SectionalMockForm } from '../components/SectionalMockForm'
 import { useAuth } from '../context/AuthContext'
 import { useMocks } from '../hooks/useFirestoreData'
 import { toMillis } from '../lib/firestoreTime'
-import { addSectionalMock, addFullMock, deleteMock } from '../services/mocks'
-import { SectionalMockForm } from '../components/SectionalMockForm'
-import { FullMockForm } from '../components/FullMockForm'
+import { addFullMock, addSectionalMock, deleteMock } from '../services/mocks'
 import type { MockKind, Subject } from '../types'
 
 export function MocksPage() {
@@ -49,21 +49,16 @@ export function MocksPage() {
       <header className="page-head">
         <p className="eyebrow">Mocks</p>
         <h1>Mock test tracker</h1>
-        <p className="lede">
-          Track sectional and full mock tests with automatic study time bonuses
-        </p>
+        <p className="lede">Track sectional and full mock tests with automatic study time bonuses</p>
       </header>
 
       <div className="form-divider" />
-
       <SectionalMockForm onSubmit={handleSectionalSubmit} />
 
       <div className="form-divider" />
-
       <FullMockForm onSubmit={handleFullMockSubmit} />
 
       <div className="form-divider" />
-
       <section className="card">
         <h2>History</h2>
         {mocks.length === 0 ? (
@@ -82,30 +77,20 @@ export function MocksPage() {
                 </tr>
               </thead>
               <tbody>
-                {mocks.map((m) => (
-                  <tr key={m.id}>
+                {mocks.map((mock) => (
+                  <tr key={mock.id}>
+                    <td>{toMillis(mock.createdAt) ? new Date(toMillis(mock.createdAt)).toLocaleString() : '-'}</td>
+                    <td>{mock.kind === 'sectional' ? 'Sectional' : mock.kind === 'full_t1' ? 'Full T1' : 'Full T2'}</td>
+                    <td>{mock.subject}</td>
                     <td>
-                      {toMillis(m.createdAt)
-                        ? new Date(toMillis(m.createdAt)).toLocaleString()
-                        : '—'}
+                      {mock.score}/{mock.maxScore}
                     </td>
-                    <td>
-                      {m.kind === 'sectional'
-                        ? 'Sectional'
-                        : m.kind === 'full_t1'
-                          ? 'Full T1'
-                          : 'Full T2'}
-                    </td>
-                    <td>{m.subject}</td>
-                    <td>
-                      {m.score}/{m.maxScore}
-                    </td>
-                    <td>{m.accuracyPct}%</td>
+                    <td>{mock.accuracyPct}%</td>
                     <td>
                       <button
                         type="button"
                         className="btn ghost sm"
-                        onClick={() => uid && void deleteMock(uid, m.id)}
+                        onClick={() => uid && void deleteMock(uid, mock.id)}
                       >
                         Remove
                       </button>

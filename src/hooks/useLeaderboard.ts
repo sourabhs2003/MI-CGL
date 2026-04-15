@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getCountFromServer,
   getDoc,
   getDocs,
   limit,
@@ -9,6 +10,7 @@ import {
 } from 'firebase/firestore'
 import { useEffect, useMemo, useState } from 'react'
 import { getDb } from '../firebase'
+import { USERS } from '../lib/auth'
 import { lastNDaysKeys } from '../lib/dates'
 import { profileFromSnap } from '../services/userProfile'
 
@@ -20,7 +22,11 @@ type Row = {
   weekHours: number
   mockCount: number
   lastMock: string
+  totalSessions: number
+  lastActivity: string
 }
+
+const userNameByUid = Object.fromEntries(USERS.map((user) => [user.uid, user.username])) as Record<string, string>
 
 export function useLeaderboard() {
   const [rows, setRows] = useState<Row[]>([])
@@ -30,8 +36,8 @@ export function useLeaderboard() {
     try {
       const raw = localStorage.getItem('user')
       if (!raw) return null
-      const u = JSON.parse(raw) as { uid?: string }
-      return typeof u.uid === 'string' ? u.uid : null
+      const user = JSON.parse(raw) as { uid?: string }
+      return typeof user.uid === 'string' ? user.uid : null
     } catch {
       return null
     }
@@ -44,68 +50,64 @@ export function useLeaderboard() {
       setLoading(true)
       try {
         const db = getDb()
-        const usersRef = collection(db, 'users')
+        const usersSnap = await getDocs(collection(db, 'users'))
+        const weekKeys = new Set(lastNDaysKeys(7))
+        const nextRows: Row[] = []
 
-        // Fetch all users
-        const usersSnap = await getDocs(usersRef)
-        const users = usersSnap.docs.map((d) => ({
-          uid: d.id,
-          ...(profileFromSnap(d.data() as Record<string, unknown>) as { username?: string; xp?: number; streak?: number }),
-        }))
-
-        // Fetch sessions for each user to calculate weekly hours
-        const weekKeys = lastNDaysKeys(7)
-        const rows: Row[] = []
-
-        for (const user of users) {
+        for (const userDoc of usersSnap.docs) {
           if (cancelled) return
 
-          const sessionsRef = collection(db, `users/${user.uid}/sessions`)
-          const sessionsQuery = query(sessionsRef, orderBy('dayKey', 'desc'), limit(7))
-          const sessionsSnap = await getDocs(sessionsQuery)
+          const profile = profileFromSnap(userDoc.data() as Record<string, unknown>)
+          const uid = userDoc.id
+          const sessionsRef = collection(db, `users/${uid}/sessions`)
+          const mocksRef = collection(db, `users/${uid}/mocks`)
 
-          const weekSec = sessionsSnap.docs
-            .filter((d) => weekKeys.includes(d.data().dayKey))
-            .reduce((sum, d) => sum + (d.data().durationSec || 0), 0)
+          const [sessionsSnap, sessionCountSnap, mocksSnap] = await Promise.all([
+            getDocs(query(sessionsRef, orderBy('dayKey', 'desc'), limit(20))),
+            getCountFromServer(sessionsRef),
+            getDocs(mocksRef),
+          ])
 
-          const weekHours = weekSec / 3600
+          const weekSec = sessionsSnap.docs.reduce((sum, sessionDoc) => {
+            const data = sessionDoc.data() as { dayKey?: string; durationSec?: number }
+            return weekKeys.has(data.dayKey ?? '') ? sum + (data.durationSec ?? 0) : sum
+          }, 0)
 
-          // Fetch mock count
-          const mocksRef = collection(db, `users/${user.uid}/mocks`)
-          const mocksSnap = await getDocs(mocksRef)
+          const latestSession = sessionsSnap.docs[0]?.data() as { dayKey?: string } | undefined
+          const totalSessions = sessionCountSnap.data().count
           const mockCount = mocksSnap.size
 
-          // Fetch last mock
-          let lastMock = 'None'
+          let lastMock = 'No mock'
           if (mockCount > 0) {
-            const lastMockDoc = await getDoc(
-              doc(db, `users/${user.uid}/mocks`, mocksSnap.docs[mocksSnap.size - 1].id)
+            const latestMock = await getDoc(
+              doc(db, `users/${uid}/mocks`, mocksSnap.docs[mocksSnap.size - 1].id),
             )
-            if (lastMockDoc.exists()) {
-              const data = lastMockDoc.data() as { createdAt?: unknown }
+            if (latestMock.exists()) {
+              const data = latestMock.data() as { createdAt?: unknown }
               if (data.createdAt) {
-                const date = new Date(data.createdAt as string)
-                lastMock = date.toLocaleDateString()
+                lastMock = new Date(data.createdAt as string).toLocaleDateString()
               }
             }
           }
 
-          rows.push({
-            username: user.username || 'User',
-            uid: user.uid,
-            xp: user.xp || 0,
-            streak: user.streak || 0,
-            weekHours,
+          nextRows.push({
+            uid,
+            username: profile.displayName || userNameByUid[uid] || 'User',
+            xp: profile.xp,
+            streak: profile.streak,
+            weekHours: Number((weekSec / 3600).toFixed(1)),
             mockCount,
             lastMock,
+            totalSessions,
+            lastActivity: latestSession?.dayKey ?? 'No activity',
           })
         }
 
         if (!cancelled) {
-          setRows(rows)
+          setRows(nextRows)
         }
-      } catch (err) {
-        console.error('Failed to load leaderboard:', err)
+      } catch (error) {
+        console.error('Failed to load leaderboard:', error)
       } finally {
         if (!cancelled) {
           setLoading(false)

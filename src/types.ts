@@ -1,4 +1,4 @@
-export type Subject = 'Maths' | 'GS' | 'English' | 'Reasoning' | 'Mixed'
+export type Subject = 'Maths' | 'GS' | 'English' | 'Reasoning' | 'Mock' | 'Mixed'
 
 export type MockKind = 'sectional' | 'full_t1' | 'full_t2'
 
@@ -32,6 +32,11 @@ export interface TaskDoc {
   priority?: 'Low' | 'Medium' | 'High'
   dateKey?: string
   completed?: boolean
+  isGroupTask?: boolean
+  createdBy?: string
+  createdAt?: unknown
+  completedAt?: unknown
+  completedBy?: string[]
 }
 
 export interface MockDoc {

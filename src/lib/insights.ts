@@ -1,7 +1,7 @@
 import { differenceInCalendarDays } from 'date-fns'
-import { lastNDaysKeys } from './dates'
-import { toMillis } from './firestoreTime'
 import type { MockDoc, StudySessionDoc, Subject } from '../types'
+import { toMillis } from './firestoreTime'
+import { lastNDaysKeys } from './dates'
 
 export function buildInsights(input: {
   sessions: StudySessionDoc[]
@@ -11,58 +11,48 @@ export function buildInsights(input: {
   const insights: string[] = []
   const { sessions, mocks, todayKey } = input
   const weekKeys = new Set(lastNDaysKeys(7))
-  const sessionsWeek = sessions.filter((s) => weekKeys.has(s.dayKey))
+  const sessionsWeek = sessions.filter((session) => weekKeys.has(session.dayKey))
 
   const bySubject: Record<Subject, number> = {
     Maths: 0,
     English: 0,
     Reasoning: 0,
     GS: 0,
+    Mock: 0,
     Mixed: 0,
   }
-  for (const s of sessionsWeek) {
-    bySubject[s.subject] += s.durationSec
+
+  for (const session of sessionsWeek) {
+    bySubject[session.subject] += session.durationSec
   }
 
   if (bySubject.GS === 0 && sessionsWeek.length > 0) {
-    insights.push(
-      'You have not logged GS time in the last 7 days. Consider one short GS block.',
-    )
+    insights.push('No GS this week.')
   }
 
   const mockWeek = mocks
-    .filter((m) => {
-      const ms = toMillis(m.createdAt)
+    .filter((mock) => {
+      const ms = toMillis(mock.createdAt)
       if (!ms) return false
       return differenceInCalendarDays(new Date(), new Date(ms)) <= 7
     })
     .sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt))
+
   if (mockWeek.length >= 2) {
     const first = mockWeek[0]!.accuracyPct
     const last = mockWeek[mockWeek.length - 1]!.accuracyPct
     const drop = first - last
     if (drop > 8) {
-      insights.push(
-        `Mock accuracy is down about ${Math.round(drop)}% from your first to latest mock this week. Tighten review + retry.`,
-      )
+      insights.push(`Accuracy down ${Math.round(drop)}%.`)
     }
   }
 
-  const strong = (Object.entries(bySubject) as [Subject, number][]).sort(
-    (a, b) => b[1] - a[1],
-  )[0]
+  const strong = (Object.entries(bySubject) as [Subject, number][]).sort((a, b) => b[1] - a[1])[0]
   if (strong && strong[1] > 0) {
-    insights.push(
-      `This week your most logged time is ${strong[0]} — keep balancing other subjects.`,
-    )
+    insights.push(`${strong[0]} leads.`)
   }
 
-  if (sessions.some((s) => s.dayKey === todayKey)) {
-    insights.push('Nice — you already have study time logged today.')
-  } else {
-    insights.push('Start a session today to protect your streak.')
-  }
-
+  insights.push(sessions.some((session) => session.dayKey === todayKey) ? 'Logged today.' : 'Start today.')
   return insights.slice(0, 6)
 }
 
@@ -73,4 +63,3 @@ export function weekStartMonday(d: Date): string {
   mon.setDate(d.getDate() + diff)
   return `${mon.getFullYear()}-${String(mon.getMonth() + 1).padStart(2, '0')}-${String(mon.getDate()).padStart(2, '0')}`
 }
-

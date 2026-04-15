@@ -28,13 +28,10 @@ export default function App() {
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={location.pathname}
-          initial={{ opacity: 0, y: 20, scale: 0.98 }}
+          initial={{ opacity: 0, y: 18, scale: 0.985 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: -20, scale: 0.98 }}
-          transition={{ 
-            duration: 0.3, 
-            ease: [0.4, 0, 0.2, 1]
-          }}
+          exit={{ opacity: 0, y: -18, scale: 0.985 }}
+          transition={{ duration: 0.32, ease: 'easeInOut' }}
         >
           <Routes location={location}>
             <Route path="/login" element={<LoginPage />} />
@@ -43,11 +40,7 @@ export default function App() {
               <Route
                 path="/dashboard"
                 element={
-                  <Suspense
-                    fallback={
-                      <div className="loading-screen">Loading analytics…</div>
-                    }
-                  >
+                  <Suspense fallback={<div className="loading-screen">Loading analytics...</div>}>
                     <DashboardPage />
                   </Suspense>
                 }

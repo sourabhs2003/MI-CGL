@@ -18,24 +18,23 @@ export function AICoach({ todayStudyTime, streak, rank, leaderboardPosition }: P
     async function loadMessage() {
       setLoading(true)
       try {
-        const msg = await generateAICoachMessage({
+        const nextMessage = await generateAICoachMessage({
           todayStudyTime,
           streak,
           rank,
           leaderboardPosition,
         })
-        setMessage(msg)
-      } catch (err) {
-        setMessage('Stay consistent. You can do it!')
+        setMessage(nextMessage)
+      } catch {
+        setMessage('Stay consistent. Short focused sessions still stack up.')
       } finally {
         setLoading(false)
       }
     }
 
-    loadMessage()
-    // Refresh every session
-    const interval = setInterval(loadMessage, 60000 * 30) // 30 minutes
-    return () => clearInterval(interval)
+    void loadMessage()
+    const interval = window.setInterval(() => void loadMessage(), 30 * 60 * 1000)
+    return () => window.clearInterval(interval)
   }, [todayStudyTime, streak, rank, leaderboardPosition])
 
   return (
@@ -43,35 +42,28 @@ export function AICoach({ todayStudyTime, streak, rank, leaderboardPosition }: P
       className="card ai-coach-card"
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.4 }}
+      transition={{ delay: 0.34 }}
     >
       <div className="card-head">
         <div className="ai-header">
           <motion.div
             className="ai-icon"
-            animate={{
-              rotate: [0, 10, -10, 0],
-              scale: [1, 1.1, 1],
-            }}
-            transition={{
-              duration: 2,
-              repeat: Infinity,
-              ease: 'easeInOut',
-            }}
+            animate={{ rotate: [0, 8, -8, 0], scale: [1, 1.06, 1] }}
+            transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
           >
             <Sparkles size={18} className="icon active" />
           </motion.div>
           <h2>AI Coach</h2>
         </div>
       </div>
-      
+
       <motion.p
         className="ai-message"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ delay: 0.5 }}
+        transition={{ delay: 0.14 }}
       >
-        {loading ? 'Analyzing your progress...' : message}
+        {loading ? 'Analyzing your momentum...' : message}
       </motion.p>
     </motion.section>
   )

@@ -15,21 +15,23 @@ export function LoginPage() {
     return <Navigate to="/" replace />
   }
 
-  async function submit(e: FormEvent) {
-    e.preventDefault()
+  async function submit(event: FormEvent) {
+    event.preventDefault()
     setErr(null)
     setBusy(true)
     try {
-      const u = login(username.trim(), password)
-      if (!u) {
+      const nextUser = login(username.trim(), password)
+      if (!nextUser) {
         setErr('Invalid credentials')
         return
       }
+
       try {
-        await ensureUserProfile(u.uid)
+        await ensureUserProfile(nextUser.uid)
       } catch {
         /* Firestore may be blocked until rules are deployed */
       }
+
       navigate('/', { replace: true })
     } finally {
       setBusy(false)
@@ -42,8 +44,7 @@ export function LoginPage() {
         <p className="eyebrow">MI CGL SmartPrep</p>
         <h1>Command Center</h1>
         <p className="card-sub">
-          Sign in with your assigned username and password. Data syncs to Firestore under your
-          user id.
+          Sign in with your assigned username and password. Data syncs to Firestore under your user id.
         </p>
 
         <form onSubmit={submit} className="login-form">
@@ -53,17 +54,18 @@ export function LoginPage() {
               type="text"
               autoComplete="username"
               value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              onChange={(event) => setUsername(event.target.value)}
               required
             />
           </label>
+
           <label className="field full">
             <span>Password</span>
             <input
               type="password"
               autoComplete="current-password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(event) => setPassword(event.target.value)}
               required
             />
           </label>
@@ -71,7 +73,7 @@ export function LoginPage() {
           {err ? <p className="form-error">{err}</p> : null}
 
           <button type="submit" className="btn primary full-width" disabled={busy}>
-            {busy ? 'Signing in…' : 'Sign in'}
+            {busy ? 'Signing in...' : 'Sign in'}
           </button>
         </form>
       </div>

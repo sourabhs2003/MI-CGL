@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion'
+import { Swords } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 type Props = {
@@ -14,36 +15,33 @@ export function RivalCard({ myStudyTimeToday, leaderboardUsers, myUid }: Props) 
   const rival = useMemo(() => {
     if (!myUid || leaderboardUsers.length === 0) return null
 
-    const myIndex = leaderboardUsers.findIndex(u => u.uid === myUid)
+    const sorted = leaderboardUsers.slice().sort((a, b) => b.weekHours - a.weekHours || b.xp - a.xp)
+    const myIndex = sorted.findIndex((user) => user.uid === myUid)
     if (myIndex === -1) return null
 
-    // Find rival - next person in leaderboard
     const rivalIndex = myIndex > 0 ? myIndex - 1 : myIndex + 1
-    return leaderboardUsers[rivalIndex] || null
+    return sorted[rivalIndex] ?? null
   }, [leaderboardUsers, myUid])
 
   const difference = useMemo(() => {
     if (!rival) return 0
-    // Convert rival's weekly hours to minutes
     const rivalMinutes = rival.weekHours * 60
     const myMinutes = myStudyTimeToday / 60
     return myMinutes - rivalMinutes
   }, [rival, myStudyTimeToday])
 
-  // Track rank change
   useEffect(() => {
     if (!myUid || leaderboardUsers.length === 0) return
 
-    const myIndex = leaderboardUsers.findIndex(u => u.uid === myUid)
-    if (myIndex !== -1) {
-      const newRank = myIndex + 1
-      if (prevRank > 0 && newRank !== prevRank) {
-        setRankChange(newRank - prevRank)
-        setPrevRank(newRank)
-      } else if (prevRank === 0) {
-        setPrevRank(newRank)
-      }
+    const sorted = leaderboardUsers.slice().sort((a, b) => b.weekHours - a.weekHours || b.xp - a.xp)
+    const myIndex = sorted.findIndex((user) => user.uid === myUid)
+    if (myIndex === -1) return
+
+    const newRank = myIndex + 1
+    if (prevRank > 0 && newRank !== prevRank) {
+      setRankChange(newRank - prevRank)
     }
+    setPrevRank(newRank)
   }, [leaderboardUsers, myUid, prevRank])
 
   if (!rival) return null
@@ -56,18 +54,23 @@ export function RivalCard({ myStudyTimeToday, leaderboardUsers, myUid }: Props) 
       className="card rival-card"
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.35 }}
+      transition={{ delay: 0.28 }}
     >
       <div className="card-head">
-        <h2>🎯 Your Rival</h2>
+        <div className="ai-header">
+          <div className="ai-icon">
+            <Swords size={18} className="icon active" />
+          </div>
+          <h2>Rival tracker</h2>
+        </div>
       </div>
-      
+
       <div className="rival-info">
         <div className="rival-name">
-          <span className="label">Rival</span>
+          <span className="label">Target</span>
           <strong>{rival.username}</strong>
         </div>
-        
+
         <div className="progress-comparison">
           <div className="progress-row">
             <span className="label">You</span>
@@ -75,21 +78,21 @@ export function RivalCard({ myStudyTimeToday, leaderboardUsers, myUid }: Props) 
               <motion.div
                 className="progress-fill my-fill"
                 initial={{ width: 0 }}
-                animate={{ width: `${Math.min((myStudyTimeToday / 60) / 120 * 100, 100)}%` }}
-                transition={{ duration: 0.8, ease: 'easeOut' }}
+                animate={{ width: `${Math.min(((myStudyTimeToday / 60) / 180) * 100, 100)}%` }}
+                transition={{ duration: 0.8, ease: 'easeInOut' }}
               />
             </div>
             <span className="value">{Math.round(myStudyTimeToday / 60)}m</span>
           </div>
-          
+
           <div className="progress-row">
             <span className="label">{rival.username}</span>
             <div className="progress-bar">
               <motion.div
                 className="progress-fill rival-fill"
                 initial={{ width: 0 }}
-                animate={{ width: `${Math.min((rival.weekHours * 60) / 120 * 100, 100)}%` }}
-                transition={{ duration: 0.8, ease: 'easeOut', delay: 0.1 }}
+                animate={{ width: `${Math.min(((rival.weekHours * 60) / 180) * 100, 100)}%` }}
+                transition={{ duration: 0.8, ease: 'easeInOut', delay: 0.08 }}
               />
             </div>
             <span className="value">{Math.round(rival.weekHours * 60)}m</span>
@@ -98,32 +101,27 @@ export function RivalCard({ myStudyTimeToday, leaderboardUsers, myUid }: Props) 
 
         <motion.div
           className={`difference-badge ${isAhead ? 'ahead' : 'behind'}`}
-          initial={{ scale: 0.8, opacity: 0 }}
+          initial={{ scale: 0.9, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          transition={{ delay: 0.5, type: 'spring', stiffness: 500 }}
+          transition={{ delay: 0.2, type: 'spring', stiffness: 320 }}
         >
           {isAhead ? 'Leading by' : 'Behind by'} {diffMinutes} mins
         </motion.div>
 
-        <motion.p
-          className="rival-message"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.6 }}
-        >
-          {isAhead ? 'Hold your position' : 'Push now to take the lead'}
-        </motion.p>
+        <p className="rival-message">
+          {isAhead ? 'Keep the pressure on and defend your rank.' : 'One more clean session can flip this race.'}
+        </p>
 
-        {rankChange !== 0 && (
+        {rankChange !== 0 ? (
           <motion.div
             className={`rank-change ${rankChange < 0 ? 'climb' : 'drop'}`}
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.7 }}
+            transition={{ duration: 0.25 }}
           >
-            {rankChange < 0 ? `You moved up to #${prevRank} 🔥` : `You dropped to #${prevRank}`}
+            {rankChange < 0 ? `You climbed to #${prevRank}` : `You slipped to #${prevRank}`}
           </motion.div>
-        )}
+        ) : null}
       </div>
     </motion.section>
   )
