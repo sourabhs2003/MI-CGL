@@ -8,16 +8,54 @@ import {
 import { format } from 'date-fns'
 import { getDb } from '../firebase'
 import { xpFromStudySeconds } from '../lib/xp'
-import type { Subject } from '../types'
+import type { Subject, TimeOfDay } from '../types'
 
-export async function saveStudySession(
-  uid: string,
-  input: {
-    subject: Subject
-    topic: string
-    durationSec: number
-  },
-): Promise<void> {
+type StudySessionInput = {
+  subject: Subject
+  topic: string
+  durationSec: number
+  startTime?: string
+  endTime?: string
+  timeOfDay?: TimeOfDay
+}
+
+type QueuedStudySession = {
+  id: string
+  uid: string
+  createdAt: number
+  input: StudySessionInput
+}
+
+const QUEUE_KEY = 'study-session-queue'
+let syncPromise: Promise<void> | null = null
+
+function readQueue(): QueuedStudySession[] {
+  try {
+    const raw = localStorage.getItem(QUEUE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as QueuedStudySession[]
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function writeQueue(queue: QueuedStudySession[]) {
+  localStorage.setItem(QUEUE_KEY, JSON.stringify(queue))
+}
+
+function enqueueSession(uid: string, input: StudySessionInput) {
+  const queue = readQueue()
+  queue.push({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    uid,
+    createdAt: Date.now(),
+    input,
+  })
+  writeQueue(queue)
+}
+
+async function persistStudySession(uid: string, input: StudySessionInput): Promise<void> {
   if (input.durationSec <= 0) return
 
   const db = getDb()
@@ -54,6 +92,9 @@ export async function saveStudySession(
       topic: input.topic,
       durationSec: input.durationSec,
       dayKey: today,
+      startTime: input.startTime ?? null,
+      endTime: input.endTime ?? null,
+      timeOfDay: input.timeOfDay ?? null,
       endedAt: serverTimestamp(),
     })
 
@@ -78,4 +119,49 @@ export async function saveStudySession(
       { merge: true },
     )
   })
+}
+
+export async function syncQueuedStudySessions(): Promise<void> {
+  if (syncPromise) return syncPromise
+
+  syncPromise = (async () => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return
+    const queue = readQueue()
+    if (!queue.length) return
+
+    const remaining: QueuedStudySession[] = []
+    for (const item of queue) {
+      try {
+        await persistStudySession(item.uid, item.input)
+      } catch {
+        remaining.push(item)
+      }
+    }
+    writeQueue(remaining)
+  })().finally(() => {
+    syncPromise = null
+  })
+
+  return syncPromise
+}
+
+export async function saveStudySession(
+  uid: string,
+  input: StudySessionInput,
+): Promise<{ queued: boolean }> {
+  if (input.durationSec <= 0) return { queued: false }
+
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    enqueueSession(uid, input)
+    return { queued: true }
+  }
+
+  try {
+    await persistStudySession(uid, input)
+    await syncQueuedStudySessions()
+    return { queued: false }
+  } catch (error) {
+    enqueueSession(uid, input)
+    return { queued: true }
+  }
 }

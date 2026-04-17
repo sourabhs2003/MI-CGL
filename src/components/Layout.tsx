@@ -1,28 +1,35 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { BarChart3, CheckSquare, Home, LogOut, Trophy } from 'lucide-react'
+import { BarChart3, CheckSquare, Home, LogOut, Trophy, Users } from 'lucide-react'
+import { AvatarIcon } from '../components/AvatarIcon'
 import { useAuth } from '../context/AuthContext'
+import { getIdentity } from '../lib/identity'
 
 const links = [
   { to: '/', label: 'Home', icon: Home },
-  { to: '/dashboard', label: 'Stats', icon: BarChart3 },
   { to: '/tasks', label: 'Tasks', icon: CheckSquare },
   { to: '/mocks', label: 'Mocks', icon: Trophy },
+  { to: '/dashboard', label: 'Analytics', icon: BarChart3 },
+  { to: '/squad', label: 'Squad', icon: Users },
 ]
 
 export function Layout() {
   const { logout, user } = useAuth()
-  const label = user?.username ?? 'Player'
+  const identity = getIdentity(user?.username ?? 'player')
+  const label = user?.displayName ?? identity.displayName
 
   return (
     <div className="shell">
       <nav className="main-nav top">
-        <div className="nav-brand">
-          <span className="eyebrow">MI CGL</span>
-          <strong>Prep Arena</strong>
+        <div className="nav-brand centered">
+          <span className="eyebrow"></span>
+          <strong>MI  CGL</strong>
         </div>
         <div className="nav-user">
-          <span className="nav-email">{label}</span>
+          <div className="nav-email avatar-inline" style={{ color: user?.avatarColor ?? identity.avatar.color }}>
+            <AvatarIcon username={user?.username ?? identity.username} size={24} />
+            <span>{label}</span>
+          </div>
           <button type="button" className="btn ghost sm nav-logout" onClick={() => logout()}>
             <LogOut size={14} />
           </button>

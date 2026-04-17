@@ -13,7 +13,6 @@ import {
 } from 'firebase/firestore'
 import { format } from 'date-fns'
 import { getDb } from '../firebase'
-import { USERS } from '../lib/auth'
 import { XP_TASK_DONE } from '../lib/xp'
 import type { TaskDoc } from '../types'
 
@@ -44,8 +43,13 @@ function normalizeTask(uid: string, taskId: string, data: Record<string, unknown
     id: taskId,
     title: String(data.title ?? ''),
     subject: String(data.subject ?? 'Mixed'),
+    type: (data.type as TaskDoc['type']) ?? 'study',
+    targetType: data.targetType as TaskDoc['targetType'] | undefined,
     dateKey: typeof data.dateKey === 'string' ? data.dateKey : undefined,
     priority: data.priority as TaskDoc['priority'],
+    value: data.value as number | undefined,
+    duration: data.duration as number | undefined,
+    notes: data.notes as string | undefined,
     completed: isGroupTask ? completedBy.includes(uid) : Boolean(data.completed),
     isGroupTask,
     createdBy: typeof data.createdBy === 'string' ? data.createdBy : undefined,
@@ -59,26 +63,6 @@ function isExpiredForUser(task: TaskDoc): boolean {
   if (!task.completed) return false
   const completedAt = toMillis(task.completedAt)
   return completedAt !== null && Date.now() - completedAt > DAY_MS
-}
-
-async function cleanupExpiredTasks(uid: string, tasks: TaskDoc[]) {
-  const db = getDb()
-  await Promise.all(
-    tasks.map(async (task) => {
-      if (!isExpiredForUser(task) || !task.id) return
-
-      if (!task.isGroupTask) {
-        await deleteDoc(doc(db, `users/${uid}/tasks`, task.id))
-        return
-      }
-
-      const completedAtBy = task.completedBy ?? []
-      const everyoneDone = USERS.every((user) => completedAtBy.includes(user.uid))
-      if (everyoneDone) {
-        await deleteDoc(doc(db, 'groupTasks', task.id))
-      }
-    }),
-  )
 }
 
 export function subscribeTasks(uid: string, cb: (tasks: TaskDoc[]) => void) {
@@ -96,13 +80,10 @@ export function subscribeTasks(uid: string, cb: (tasks: TaskDoc[]) => void) {
     cb(merged)
   }
 
-  const offPersonal = onSnapshot(
+  const unsubPersonal = onSnapshot(
     personalQuery,
     (snap) => {
-      personalTasks = snap.docs.map((entry) =>
-        normalizeTask(uid, entry.id, entry.data() as Record<string, unknown>, false),
-      )
-      void cleanupExpiredTasks(uid, personalTasks)
+      personalTasks = snap.docs.map((d) => normalizeTask(uid, d.id, d.data() as Record<string, unknown>, false))
       emit()
     },
     () => {
@@ -111,13 +92,10 @@ export function subscribeTasks(uid: string, cb: (tasks: TaskDoc[]) => void) {
     },
   )
 
-  const offGroup = onSnapshot(
+  const unsubGroup = onSnapshot(
     groupQuery,
     (snap) => {
-      groupTasks = snap.docs.map((entry) =>
-        normalizeTask(uid, entry.id, entry.data() as Record<string, unknown>, true),
-      )
-      void cleanupExpiredTasks(uid, groupTasks)
+      groupTasks = snap.docs.map((d) => normalizeTask(uid, d.id, d.data() as Record<string, unknown>, true))
       emit()
     },
     () => {
@@ -127,8 +105,8 @@ export function subscribeTasks(uid: string, cb: (tasks: TaskDoc[]) => void) {
   )
 
   return () => {
-    offPersonal()
-    offGroup()
+    unsubPersonal()
+    unsubGroup()
   }
 }
 
@@ -137,26 +115,34 @@ export async function addTask(
   input: {
     title: string
     subject: string
+    type?: TaskDoc['type']
+    targetType?: TaskDoc['targetType']
     priority?: TaskDoc['priority']
     dateKey?: string
+    value?: number
+    duration?: number
+    notes?: string
     isGroupTask?: boolean
+    createdBy?: string
   },
 ): Promise<void> {
   const today = input.dateKey ?? format(new Date(), 'yyyy-MM-dd')
-  const payload = {
-    title: input.title,
-    subject: input.subject,
-    dateKey: today,
-    priority: input.priority ?? null,
-    completed: false,
-    createdAt: serverTimestamp(),
-    createdBy: uid,
-    isGroupTask: Boolean(input.isGroupTask),
-  }
-
+  
   if (input.isGroupTask) {
     await addDoc(collection(getDb(), 'groupTasks'), {
-      ...payload,
+      title: input.title,
+      subject: input.subject,
+      type: input.type ?? 'study',
+      targetType: input.targetType ?? null,
+      dateKey: today,
+      priority: input.priority ?? null,
+      completed: false,
+      value: input.value ?? null,
+      duration: input.duration ?? null,
+      notes: input.notes ?? null,
+      isGroupTask: true,
+      createdBy: uid,
+      createdAt: serverTimestamp(),
       completedBy: [],
       completedAtBy: {},
     })
@@ -164,8 +150,19 @@ export async function addTask(
   }
 
   await addDoc(collection(getDb(), `users/${uid}/tasks`), {
-    ...payload,
-    completedAt: null,
+    title: input.title,
+    subject: input.subject,
+    type: input.type ?? 'study',
+    targetType: input.targetType ?? null,
+    dateKey: today,
+    priority: input.priority ?? null,
+    completed: false,
+    value: input.value ?? null,
+    duration: input.duration ?? null,
+    notes: input.notes ?? null,
+    isGroupTask: false,
+    createdBy: input.createdBy ?? null,
+    createdAt: serverTimestamp(),
   })
 }
 

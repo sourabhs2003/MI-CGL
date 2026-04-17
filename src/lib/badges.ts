@@ -47,8 +47,8 @@ export function computeEarnedBadgeIds(input: {
   }
 
   if (mocks.length >= 10) earned.add('mock_10')
-  if (mocks.some((m) => m.accuracyPct >= 90)) earned.add('acc_90')
-  if (mocks.some((m) => m.accuracyPct >= 85 && m.accuracyPct < 90))
+  if (mocks.some((m) => m.overall.accuracy >= 90)) earned.add('acc_90')
+  if (mocks.some((m) => m.overall.accuracy >= 85 && m.overall.accuracy < 90))
     earned.add('acc_85')
 
   return earned

@@ -1,247 +1,394 @@
-import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import confetti from 'canvas-confetti'
-import { Calendar, Check, CheckCircle2, Users } from 'lucide-react'
+import { BarChart3, Brain, CheckCheck, Clock3, Flame, RefreshCw, Sparkles, Target, TriangleAlert } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Countdown } from '../components/Countdown'
 import { useAuth } from '../context/AuthContext'
 import { useSessions, useTasks } from '../hooks/useFirestoreData'
-import { useLeaderboard } from '../hooks/useLeaderboard'
 import { useUserProfile } from '../hooks/useUserProfile'
+import { durationMinutes, SUBJECTS } from '../lib/calculations'
 import { todayKey } from '../lib/dates'
-import { getRankTier, type RankTier, xpFromStudySeconds } from '../lib/xp'
+import { getIdentity } from '../lib/identity'
+import { xpFromStudySeconds } from '../lib/xp'
 import { completeTask } from '../services/tasks'
-import { saveStudySession } from '../services/studySession'
-import type { TaskDoc } from '../types'
-import { Leaderboard } from '../components/Leaderboard'
-import { StudyInput } from '../components/StudyInput'
+import { saveStudySession, syncQueuedStudySessions } from '../services/studySession'
+import { resetUserData } from '../services/resetData'
+import type { Subject, TaskDoc, TimeOfDay } from '../types'
 
-function getNextRankName(current: RankTier): string {
-  const tiers: RankTier[] = ['Bronze', 'Silver', 'Gold', 'Elite', 'Topper']
-  const idx = tiers.indexOf(current)
-  return idx < tiers.length - 1 ? tiers[idx + 1] : 'Max'
+const logSubjects = SUBJECTS.filter((item) => item !== 'Mock')
+
+function getTaskXp(priority?: TaskDoc['priority']) {
+  if (priority === 'High') return 15
+  if (priority === 'Medium') return 10
+  return 5
+}
+
+function formatHours(seconds: number) {
+  return `${(seconds / 3600).toFixed(seconds >= 3600 ? 1 : 2)}h`
+}
+
+function toTimeValue(date = new Date()) {
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+}
+
+function getTimeOfDay(startTime: string): TimeOfDay {
+  const hour = Number(startTime.slice(0, 2))
+  if (hour < 12) return 'morning'
+  if (hour < 17) return 'afternoon'
+  if (hour < 21) return 'evening'
+  return 'night'
 }
 
 export function HomePage() {
   const { user } = useAuth()
   const uid = user?.uid
-  const { profile, error: profileErr } = useUserProfile(uid)
-  const sessions = useSessions(uid, 400)
-  const tasks = useTasks(uid)
-  const { rows: leaderboardUsers, loading: leaderboardLoading, meUid } = useLeaderboard()
   const today = todayKey()
-  const [selectedDate, setSelectedDate] = useState(today)
-  const [rankUpPulse, setRankUpPulse] = useState(false)
-  const [showTaskXP, setShowTaskXP] = useState(false)
-  const [taskXPAmount, setTaskXPAmount] = useState(0)
-
-  const todaySec = useMemo(
-    () =>
-      sessions
-        .filter((session) => session.dayKey === today)
-        .reduce((sum, session) => sum + session.durationSec, 0),
-    [sessions, today],
-  )
-
-  const tasksForDate = useMemo(
-    () => tasks.filter((task) => task.dateKey === selectedDate && !task.completed),
-    [tasks, selectedDate],
-  )
-
-  const completedTasksForDate = useMemo(
-    () => tasks.filter((task) => task.dateKey === selectedDate && task.completed),
-    [tasks, selectedDate],
-  )
-
-  const xp = profile?.xp ?? 0
-  const streak = profile?.streak ?? 0
-  const rank = getRankTier(xp)
-  const todayXp = xpFromStudySeconds(todaySec) + taskXPAmount
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000)
+  const yesterdayKey = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`
+  const { profile } = useUserProfile(uid)
+  const sessions = useSessions(uid, 500)
+  const tasks = useTasks(uid)
+  const [subject, setSubject] = useState<Subject>('Maths')
+  const [startTime, setStartTime] = useState('07:00')
+  const [endTime, setEndTime] = useState(toTimeValue())
+  const [saving, setSaving] = useState(false)
+  const [feedback, setFeedback] = useState<string | null>(null)
+  const [xpPulse, setXpPulse] = useState<number | null>(null)
+  const [cardIndex, setCardIndex] = useState(0)
+  const [isOnline, setIsOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine))
+  const [showResetConfirm, setShowResetConfirm] = useState(false)
+  const [resetting, setResetting] = useState(false)
 
   useEffect(() => {
-    setRankUpPulse(true)
-    const timer = window.setTimeout(() => setRankUpPulse(false), 800)
-    return () => window.clearTimeout(timer)
-  }, [rank.tier])
+    void syncQueuedStudySessions()
+    function handleOnline() {
+      setIsOnline(true)
+      void syncQueuedStudySessions()
+      setFeedback('Offline sessions synced.')
+    }
+    function handleOffline() {
+      setIsOnline(false)
+      setFeedback('Offline mode. Study logs will sync later.')
+    }
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
 
-  async function handleTaskComplete(task: TaskDoc) {
-    if (!uid || !task.id) return
+  const todaySessions = useMemo(() => sessions.filter((session) => session.dayKey === today), [sessions, today])
+  const todaySec = useMemo(() => todaySessions.reduce((sum, session) => sum + session.durationSec, 0), [todaySessions])
+  const yesterdaySec = useMemo(
+    () => sessions.filter((session) => session.dayKey === yesterdayKey).reduce((sum, session) => sum + session.durationSec, 0),
+    [sessions, yesterdayKey],
+  )
+  const todayTasks = useMemo(() => tasks.filter((task) => task.dateKey === today && !task.isGroupTask), [tasks, today])
+  const pendingTasks = useMemo(() => todayTasks.filter((task) => !task.completed), [todayTasks])
+  const completedTasks = useMemo(() => todayTasks.filter((task) => task.completed), [todayTasks])
+  const todayXp = useMemo(
+    () => xpFromStudySeconds(todaySec) + completedTasks.reduce((sum, task) => sum + getTaskXp(task.priority), 0),
+    [completedTasks, todaySec],
+  )
 
-    await completeTask(uid, task)
+  const userIdentity = useMemo(() => getIdentity(user?.username ?? 'user'), [user?.username])
+  const targetHours = 4
+  const progressPct = Math.min(100, Math.round((todaySec / (targetHours * 3600)) * 100))
 
-    let earnedXp = 5
-    if (task.priority === 'Medium') earnedXp = 10
-    if (task.priority === 'High') earnedXp = 15
+  const aiCards = useMemo(() => {
+    const subjectTotals = todaySessions.reduce<Record<string, number>>((acc, session) => {
+      acc[session.subject] = (acc[session.subject] ?? 0) + session.durationSec
+      return acc
+    }, {})
+    const topSubject = Object.entries(subjectTotals).sort((a, b) => b[1] - a[1])[0]?.[0]
 
-    setTaskXPAmount((current) => current + earnedXp)
-    setShowTaskXP(true)
-    window.setTimeout(() => setShowTaskXP(false), 1800)
+    return [
+      {
+        icon: Flame,
+        title: 'Focus for today',
+        text: todaySec < yesterdaySec ? `You studied ${((yesterdaySec - todaySec) / 3600).toFixed(1)}h less than yesterday - fix it.` : 'Consistency streak is building. Keep pressing.',
+      },
+      {
+        icon: Brain,
+        title: 'Performance insight',
+        text: topSubject ? `${topSubject} time increased today. Protect the momentum.` : 'Your next strong session sets the tone.',
+      },
+      {
+        icon: todaySec === 0 ? TriangleAlert : Target,
+        title: todaySec === 0 ? 'Warning' : 'Encouragement',
+        text: todaySec === 0 ? 'Low output so far. Start one clean block now.' : 'One more deep block can finish the day strong.',
+      },
+    ]
+  }, [todaySec, todaySessions, yesterdaySec])
 
-    confetti({
-      particleCount: 50,
-      spread: 45,
-      origin: { y: 0.64 },
-      colors: ['#22c55e', '#facc15'],
-    })
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setCardIndex((current) => (current + 1) % aiCards.length)
+    }, 4500)
+    return () => window.clearInterval(timer)
+  }, [aiCards.length])
+
+  const summary = useMemo(
+    () => [
+      { label: 'Hours', value: formatHours(todaySec), icon: Clock3 },
+      { label: 'Streak', value: `${profile?.streak ?? 0}`, icon: Flame },
+      { label: 'XP', value: `${todayXp}`, icon: Sparkles },
+      { label: 'Done', value: `${completedTasks.length}`, icon: BarChart3 },
+    ],
+    [completedTasks.length, profile?.streak, todaySec, todayXp],
+  )
+
+  async function handleTimeLog() {
+    if (!uid) return
+    const mins = durationMinutes(startTime, endTime)
+    if (mins == null || mins <= 0) {
+      setFeedback('Select a valid time range.')
+      return
+    }
+
+    setSaving(true)
+    setFeedback(null)
+    try {
+      const result = await saveStudySession(uid, {
+        subject,
+        topic: `${startTime}-${endTime}`,
+        durationSec: mins * 60,
+        startTime,
+        endTime,
+        timeOfDay: getTimeOfDay(startTime),
+      })
+      const gainedXp = xpFromStudySeconds(mins * 60)
+      setXpPulse(gainedXp)
+      window.setTimeout(() => setXpPulse(null), 1200)
+      setFeedback(result.queued ? 'Saved offline. Syncing when online.' : 'Study log added.')
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : 'Could not save study log.')
+    } finally {
+      setSaving(false)
+    }
   }
 
+  async function handleTaskToggle(task: TaskDoc) {
+    if (!uid || !task.id || task.completed) return
+    await completeTask(uid, task)
+  }
+
+  async function handleReset() {
+    if (!uid) return
+    setResetting(true)
+    try {
+      await resetUserData(uid)
+      // Note: resetUserData now triggers window.location.reload()
+      // So we don't need to update state here
+    } catch (error) {
+      setResetting(false)
+      setFeedback(error instanceof Error ? error.message : 'Reset failed. Try again.')
+    }
+  }
+
+  const liveCard = aiCards[cardIndex]!
+
   return (
-    <main className="home-flow">
-      <motion.section
-        className="xp-block compact rank-panel home-section"
-        initial={{ opacity: 0, y: 12 }}
-        animate={{
-          opacity: 1,
-          y: 0,
-          scale: rankUpPulse ? [1, 1.02, 1] : 1,
-        }}
-        transition={{ duration: 0.24, ease: 'easeInOut' }}
-        style={{ borderColor: `${rank.color}55` }}
-      >
-        <div className="home-xp-head">
-          <div>
-            <p className="eyebrow">Level</p>
-            <h1>{rank.tier}</h1>
-          </div>
-          <div className="today-xp-chip">+{todayXp} XP</div>
-        </div>
-
-        <div className="rank-badge">
-          <span className="rank-icon">{rank.icon}</span>
-          <div className="rank-info">
-            <span className="rank-name">{xp} XP</span>
-            <span className="rank-xp">{streak}d streak</span>
+    <main className="home-v2">
+      <motion.header className="home-hero card hero-live center-brand" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.24 }}>
+        <div className="brand-center">
+          <p className="eyebrow">MI CGL</p>
+          <div className="brand-identity" style={{ color: userIdentity.avatar.color }}>
+            <span>{userIdentity.avatar.icon}</span>
+            <strong>{profile?.displayName ?? userIdentity.displayName}</strong>
           </div>
         </div>
 
-        <div className="xp-bar" aria-hidden>
-          <motion.div
-            className="xp-fill"
-            initial={{ width: 0 }}
-            animate={{ width: `${(rank.xpIntoTier / rank.tierTotal) * 100}%` }}
-            transition={{ duration: 0.8, ease: 'easeInOut' }}
-            style={{ background: `linear-gradient(90deg, ${rank.color}99, ${rank.color})` }}
-          />
+        <motion.div key={liveCard.title + liveCard.text} className="hero-ai-card" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.24 }}>
+          <div className="hero-ai-head">
+            <liveCard.icon size={16} />
+            <strong>{liveCard.title}</strong>
+          </div>
+          <p className="hero-quote">{liveCard.text}</p>
+        </motion.div>
+
+        <div className="hero-progress-shell" aria-label="Today progress">
+          <div className="hero-progress-head">
+            <span>{formatHours(todaySec)} today</span>
+            <span>{targetHours}h target</span>
+          </div>
+          <div className="hero-progress-bar">
+            <motion.div className="hero-progress-fill" initial={{ width: 0 }} animate={{ width: `${progressPct}%` }} transition={{ duration: 0.4 }} />
+          </div>
         </div>
+      </motion.header>
 
-        <p className="xp-hint">
-          {rank.xpToNext > 0 ? `${rank.xpToNext} XP to ${getNextRankName(rank.tier)}` : 'Top rank'}
-        </p>
-      </motion.section>
-
-      {profileErr ? (
-        <p className="banner warn home-section">
-          Cloud sync issue: {profileErr}. Deploy rules in <code>firestore.rules</code>.
-        </p>
-      ) : null}
-
-      <section className="home-section">
-        <Leaderboard rows={leaderboardUsers} loading={leaderboardLoading} meUid={meUid} todayXp={todayXp} />
+      <section className="card home-block">
+        <div className="home-block-head">
+          <h2><CheckCheck size={16} /> Today&apos;s Tasks</h2>
+          <span>{pendingTasks.length} open</span>
+        </div>
+        <div className="home-task-stack">
+          {pendingTasks.map((task) => (
+            <button key={task.id} type="button" className="home-task-card" onClick={() => void handleTaskToggle(task)}>
+              <div>
+                <strong>{task.title}</strong>
+                <span>{task.subject}</span>
+              </div>
+              <span className="home-task-toggle" aria-hidden="true" />
+            </button>
+          ))}
+          {pendingTasks.length === 0 ? <p className="muted">No tasks for today.</p> : null}
+        </div>
       </section>
 
-      <motion.section
-        className="card mission-card home-section"
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.24, ease: 'easeInOut', delay: 0.04 }}
-      >
-        <div className="card-head">
-          <h2>Today</h2>
-          <label className="date-selector" htmlFor="task-date">
-            <Calendar size={15} className="icon" />
-            <input
-              id="task-date"
-              type="date"
-              value={selectedDate}
-              onChange={(event) => setSelectedDate(event.target.value)}
-              className="date-input"
-            />
-          </label>
+      <section className="card home-block home-study-block">
+        <div className="home-block-head">
+          <h2><Clock3 size={16} /> Study Log</h2>
+          <span>{isOnline ? 'Online' : 'Offline'}</span>
         </div>
 
         <AnimatePresence>
-          {showTaskXP ? (
+          {xpPulse ? (
             <motion.div
-              className="xp-float task-xp-float"
-              initial={{ opacity: 0, y: 0, scale: 0.8 }}
-              animate={{ opacity: 1, y: -24, scale: 1 }}
-              exit={{ opacity: 0, y: -36, scale: 0.9 }}
-              transition={{ duration: 0.32, ease: 'easeInOut' }}
+              className="xp-popup"
+              initial={{ opacity: 0, y: 8, scale: 0.92 }}
+              animate={{ opacity: 1, y: -8, scale: 1 }}
+              exit={{ opacity: 0, y: -22, scale: 0.92 }}
+              transition={{ duration: 0.26 }}
             >
-              +{taskXPAmount} XP
+              +{xpPulse} XP
             </motion.div>
           ) : null}
         </AnimatePresence>
 
-        <div className="tasks-container">
-          <AnimatePresence mode="popLayout">
-            {tasksForDate.map((task) => (
-              <motion.div
-                key={task.id}
-                layout
-                className={`task-item priority-${task.priority?.toLowerCase() ?? 'low'}`}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2, ease: 'easeInOut' }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <div className="task-content">
-                  <div className="task-header">
-                    <span className={`task-priority ${task.priority?.toLowerCase() ?? 'low'}`}>
-                      {task.priority ?? 'Low'}
-                    </span>
-                    <span className="task-subject">{task.subject}</span>
-                    {task.isGroupTask ? (
-                      <span className="task-badge">
-                        <Users size={12} />
-                        Group
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="task-title">{task.title}</p>
-                </div>
-                <motion.button
-                  type="button"
-                  className="btn ghost sm task-check"
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => void handleTaskComplete(task)}
-                >
-                  <Check size={16} className="icon" />
-                </motion.button>
-              </motion.div>
-            ))}
-          </AnimatePresence>
+        <div className="home-study-panel">
+          <label className="field full">
+            <span>Subject</span>
+            <select value={subject} onChange={(event) => setSubject(event.target.value as Subject)}>
+              {logSubjects.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </label>
 
-          {tasksForDate.length === 0 ? <p className="muted">No active tasks.</p> : null}
+          <div className="home-study-time-row">
+            <label className="field">
+              <span>Start Time</span>
+              <input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} />
+            </label>
+            <label className="field">
+              <span>End Time</span>
+              <input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} />
+            </label>
+          </div>
+
+          <button type="button" className="btn primary home-log-submit" disabled={saving} onClick={() => void handleTimeLog()}>
+            Save
+          </button>
         </div>
 
-        {completedTasksForDate.length > 0 ? (
-          <div className="completed-tasks compact">
-            <h3>Done</h3>
-            {completedTasksForDate.map((task) => (
-              <div key={task.id} className="task-item completed">
-                <div className="task-content">
-                  <p className="task-title">{task.title}</p>
-                </div>
-                <CheckCircle2 size={16} className="icon active" />
-              </div>
-            ))}
-          </div>
-        ) : null}
-      </motion.section>
+        {feedback ? <p className="muted">{feedback}</p> : null}
+      </section>
 
-      <motion.section
-        className="home-section"
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.24, ease: 'easeInOut', delay: 0.08 }}
-      >
-        <StudyInput
-          onSaved={async (payload) => {
-            if (!uid) return
-            await saveStudySession(uid, payload)
-          }}
-        />
-      </motion.section>
+      <section className="home-summary-grid">
+        {summary.map((item) => (
+          <article key={item.label} className="card home-summary-card">
+            <item.icon size={18} />
+            <span>{item.label}</span>
+            <strong>{item.value}</strong>
+          </article>
+        ))}
+      </section>
+
+      <section className="card home-block">
+        <div className="home-block-head">
+          <h2><Target size={16} /> AI Insight</h2>
+          <span>Live read</span>
+        </div>
+        <div className="home-insight-list">
+          {aiCards.slice(0, 2).map((item) => (
+            <strong key={item.title + item.text}>{item.text}</strong>
+          ))}
+        </div>
+      </section>
+
+      <section className="card home-block">
+        <div className="home-block-head">
+          <h2><BarChart3 size={16} /> Daily Summary</h2>
+          <span>{completedTasks.length} completed</span>
+        </div>
+        <div className="home-summary-inline">
+          <span>{formatHours(todaySec)} studied today</span>
+          <span>{profile?.streak ?? 0} day streak</span>
+          <span>{todayXp} XP gained</span>
+          <span>{completedTasks.length} tasks completed</span>
+        </div>
+      </section>
+
+      <Countdown />
+
+      <section className="card home-block">
+        <div className="home-block-head">
+          <h2><RefreshCw size={16} /> Reset Data</h2>
+          <span>Danger zone</span>
+        </div>
+        <p className="muted">This will erase all your progress (XP, streak, study logs, tasks, mocks). Your identity and avatar will be preserved.</p>
+        <button
+          type="button"
+          className="btn danger"
+          disabled={resetting}
+          onClick={() => setShowResetConfirm(true)}
+        >
+          {resetting ? 'Resetting...' : 'Reset All Progress'}
+        </button>
+      </section>
+
+      <AnimatePresence>
+        {showResetConfirm && (
+          <motion.div
+            className="modal-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowResetConfirm(false)}
+          >
+            <motion.div
+              className="modal-card"
+              initial={{ scale: 0.92, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.92, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3>Reset All Progress?</h3>
+              <p className="muted">This will permanently erase:</p>
+              <ul className="modal-list">
+                <li>All XP and levels</li>
+                <li>Study time and sessions</li>
+                <li>Streak data</li>
+                <li>Mock test results</li>
+                <li>All tasks</li>
+                <li>Analytics data</li>
+              </ul>
+              <p className="muted">Your username, display name, and avatar will be preserved.</p>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={() => setShowResetConfirm(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn danger"
+                  disabled={resetting}
+                  onClick={() => void handleReset()}
+                >
+                  {resetting ? 'Resetting...' : 'Yes, Reset Everything'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </main>
   )
 }

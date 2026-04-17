@@ -6,7 +6,9 @@ import { SplashGate } from './components/SplashGate'
 import { useAuth } from './context/AuthContext'
 import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
+import { MockAnalysisPage } from './pages/MockAnalysisPage'
 import { MocksPage } from './pages/MocksPage'
+import { SquadPage } from './pages/SquadPage'
 import { TasksPage } from './pages/TasksPage'
 
 const DashboardPage = lazy(async () => {
@@ -28,10 +30,10 @@ export default function App() {
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={location.pathname}
-          initial={{ opacity: 0, y: 18, scale: 0.985 }}
+          initial={{ opacity: 0, y: 20, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: -18, scale: 0.985 }}
-          transition={{ duration: 0.32, ease: 'easeInOut' }}
+          exit={{ opacity: 0, y: -20, scale: 0.98 }}
+          transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
         >
           <Routes location={location}>
             <Route path="/login" element={<LoginPage />} />
@@ -47,6 +49,8 @@ export default function App() {
               />
               <Route path="/tasks" element={<TasksPage />} />
               <Route path="/mocks" element={<MocksPage />} />
+              <Route path="/mocks/analysis" element={<MockAnalysisPage />} />
+              <Route path="/squad" element={<SquadPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

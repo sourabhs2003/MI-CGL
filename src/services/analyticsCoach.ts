@@ -1,3 +1,4 @@
+import { getAverageScore } from '../lib/mockAnalytics'
 import type { MockDoc, StudySessionDoc } from '../types'
 
 type AnalyticsInsightInput = {
@@ -23,27 +24,11 @@ function buildFallbackInsight({ sessions, mocks, streak }: AnalyticsInsightInput
   }, {})
 
   const weakestSubject = Object.entries(subjectTotals).sort((a, b) => a[1] - b[1])[0]?.[0]
-  const recentMocks = [...mocks].slice(-5)
-  const avgMock =
-    recentMocks.length > 0
-      ? Math.round(
-          recentMocks.reduce((sum, mock) => sum + (mock.maxScore > 0 ? (mock.score / mock.maxScore) * 100 : 0), 0) /
-            recentMocks.length,
-        )
-      : 0
+  const avgMock = getAverageScore(mocks.slice(-5))
 
-  if (avgMock > 0 && avgMock < 60 && weakestSubject) {
-    return `Weak ${weakestSubject}. Shift 60% focus there for 5 days.`
-  }
-
-  if (streak < 3) {
-    return 'Protect streak. Lock one focused session daily.'
-  }
-
-  if (weakestSubject) {
-    return `${weakestSubject} needs more time next.`
-  }
-
+  if (avgMock > 0 && avgMock < 60 && weakestSubject) return `Weak ${weakestSubject}. Shift more time there this week.`
+  if (streak < 3) return 'Protect streak. Lock one focused session daily.'
+  if (weakestSubject) return `${weakestSubject} needs more time next.`
   return 'Stay consistent. Push one strong session today.'
 }
 
@@ -51,9 +36,7 @@ export async function generateAnalyticsInsight(input: AnalyticsInsightInput): Pr
   const baseUrl = import.meta.env.VITE_GENKIT_URL
   const apiKey = import.meta.env.VITE_GENKIT_API_KEY
 
-  if (!baseUrl) {
-    return buildFallbackInsight(input)
-  }
+  if (!baseUrl) return buildFallbackInsight(input)
 
   try {
     const response = await fetch(baseUrl, {
@@ -69,20 +52,17 @@ export async function generateAnalyticsInsight(input: AnalyticsInsightInput): Pr
           dayKey: session.dayKey,
         })),
         mocks: input.mocks.map((mock) => ({
-          kind: mock.kind,
-          subject: mock.subject,
-          score: mock.score,
-          maxScore: mock.maxScore,
-          accuracyPct: mock.accuracyPct,
+          type: mock.type,
+          subject: mock.type === 'sectional' ? mock.subject : mock.exam,
+          score: mock.overall.score,
+          total: mock.overall.total,
+          accuracy: mock.overall.accuracy,
         })),
         streak: input.streak,
       }),
     })
 
-    if (!response.ok) {
-      return buildFallbackInsight(input)
-    }
-
+    if (!response.ok) return buildFallbackInsight(input)
     const data = (await response.json()) as GenkitResponse
     return data.insight || data.output || buildFallbackInsight(input)
   } catch {

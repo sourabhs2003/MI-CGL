@@ -1,3 +1,5 @@
+import { getIdentity } from './identity'
+
 const STORAGE_KEY = 'user'
 
 export const USERS = [
@@ -11,6 +13,9 @@ export const USERS = [
 export type SessionUser = {
   username: string
   uid: string
+  displayName?: string
+  avatarIcon?: string
+  avatarColor?: string
 }
 
 export function getUser(): SessionUser | null {
@@ -42,7 +47,14 @@ export function login(username: string, password: string): SessionUser | null {
     (u) => u.username === username && u.password === password,
   )
   if (!row) return null
-  const session: SessionUser = { username: row.username, uid: row.uid }
+  const identity = getIdentity(row.username)
+  const session: SessionUser = {
+    username: row.username,
+    uid: row.uid,
+    displayName: identity.displayName,
+    avatarIcon: identity.avatar.icon,
+    avatarColor: identity.avatar.color,
+  }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(session))
   return session
 }

@@ -39,8 +39,8 @@ export function buildInsights(input: {
     .sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt))
 
   if (mockWeek.length >= 2) {
-    const first = mockWeek[0]!.accuracyPct
-    const last = mockWeek[mockWeek.length - 1]!.accuracyPct
+    const first = mockWeek[0]!.overall.accuracy
+    const last = mockWeek[mockWeek.length - 1]!.overall.accuracy
     const drop = first - last
     if (drop > 8) {
       insights.push(`Accuracy down ${Math.round(drop)}%.`)
