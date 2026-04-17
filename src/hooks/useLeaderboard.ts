@@ -91,10 +91,10 @@ function buildBadges(input: {
   inactive: boolean
 }) {
   const badges: string[] = []
-  if (input.consistencyDays >= 20) badges.push('🔥 Streak Master')
-  if (input.totalHours >= 40) badges.push('🧠 Deep Worker')
-  if (input.averageAccuracy >= 80 || input.mockImprovement >= 8) badges.push('⚡ Fast Learner')
-  if (input.inactive) badges.push('💤 Inactive')
+  if (input.consistencyDays >= 20) badges.push('Streak Master')
+  if (input.totalHours >= 40) badges.push('Deep Worker')
+  if (input.averageAccuracy >= 80 || input.mockImprovement >= 8) badges.push('Fast Learner')
+  if (input.inactive) badges.push('Inactive')
   return badges
 }
 

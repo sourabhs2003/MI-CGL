@@ -34,8 +34,8 @@ export function SplashScreen() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: 'easeInOut', delay: 0.18 }}
         >
-          <p className="splash-eyebrow">SSC CGL Command Center</p>
-          <p className="splash-text">MI CGL Pro</p>
+          <p className="splash-eyebrow">SSC CGL</p>
+          <p className="splash-text">MI CGL</p>
         </motion.div>
       </motion.div>
     </motion.div>

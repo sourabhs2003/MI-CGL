@@ -41,7 +41,7 @@ export function LoginPage() {
   return (
     <div className="login-page">
       <div className="card login-card">
-        <p className="eyebrow">MI CGL SmartPrep</p>
+        <p className="eyebrow">MI CGL </p>
         <h1>Command Center</h1>
         <p className="card-sub">
           Sign in with your assigned username and password. Data syncs to Firestore under your user id.

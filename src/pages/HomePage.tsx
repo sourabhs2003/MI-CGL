@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { BarChart3, Brain, CheckCheck, Clock3, Flame, RefreshCw, Sparkles, Target, TriangleAlert } from 'lucide-react'
+import { BarChart3, Brain, CheckCheck, Clock3, Flame, Sparkles, Target, TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import { AvatarIcon } from '../components/AvatarIcon'
 import { Countdown } from '../components/Countdown'
 import { useAuth } from '../context/AuthContext'
 import { useSessions, useTasks } from '../hooks/useFirestoreData'
@@ -11,7 +12,6 @@ import { getIdentity } from '../lib/identity'
 import { xpFromStudySeconds } from '../lib/xp'
 import { completeTask } from '../services/tasks'
 import { saveStudySession, syncQueuedStudySessions } from '../services/studySession'
-import { resetUserData } from '../services/resetData'
 import type { Subject, TaskDoc, TimeOfDay } from '../types'
 
 const logSubjects = SUBJECTS.filter((item) => item !== 'Mock')
@@ -55,8 +55,6 @@ export function HomePage() {
   const [xpPulse, setXpPulse] = useState<number | null>(null)
   const [cardIndex, setCardIndex] = useState(0)
   const [isOnline, setIsOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine))
-  const [showResetConfirm, setShowResetConfirm] = useState(false)
-  const [resetting, setResetting] = useState(false)
 
   useEffect(() => {
     void syncQueuedStudySessions()
@@ -173,19 +171,6 @@ export function HomePage() {
     await completeTask(uid, task)
   }
 
-  async function handleReset() {
-    if (!uid) return
-    setResetting(true)
-    try {
-      await resetUserData(uid)
-      // Note: resetUserData now triggers window.location.reload()
-      // So we don't need to update state here
-    } catch (error) {
-      setResetting(false)
-      setFeedback(error instanceof Error ? error.message : 'Reset failed. Try again.')
-    }
-  }
-
   const liveCard = aiCards[cardIndex]!
 
   return (
@@ -194,7 +179,7 @@ export function HomePage() {
         <div className="brand-center">
           <p className="eyebrow">MI CGL</p>
           <div className="brand-identity" style={{ color: userIdentity.avatar.color }}>
-            <span>{userIdentity.avatar.icon}</span>
+            <AvatarIcon username={user?.username ?? userIdentity.username} size={32} />
             <strong>{profile?.displayName ?? userIdentity.displayName}</strong>
           </div>
         </div>
@@ -324,71 +309,6 @@ export function HomePage() {
       </section>
 
       <Countdown />
-
-      <section className="card home-block">
-        <div className="home-block-head">
-          <h2><RefreshCw size={16} /> Reset Data</h2>
-          <span>Danger zone</span>
-        </div>
-        <p className="muted">This will erase all your progress (XP, streak, study logs, tasks, mocks). Your identity and avatar will be preserved.</p>
-        <button
-          type="button"
-          className="btn danger"
-          disabled={resetting}
-          onClick={() => setShowResetConfirm(true)}
-        >
-          {resetting ? 'Resetting...' : 'Reset All Progress'}
-        </button>
-      </section>
-
-      <AnimatePresence>
-        {showResetConfirm && (
-          <motion.div
-            className="modal-overlay"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setShowResetConfirm(false)}
-          >
-            <motion.div
-              className="modal-card"
-              initial={{ scale: 0.92, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.92, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <h3>Reset All Progress?</h3>
-              <p className="muted">This will permanently erase:</p>
-              <ul className="modal-list">
-                <li>All XP and levels</li>
-                <li>Study time and sessions</li>
-                <li>Streak data</li>
-                <li>Mock test results</li>
-                <li>All tasks</li>
-                <li>Analytics data</li>
-              </ul>
-              <p className="muted">Your username, display name, and avatar will be preserved.</p>
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  className="btn ghost"
-                  onClick={() => setShowResetConfirm(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="btn danger"
-                  disabled={resetting}
-                  onClick={() => void handleReset()}
-                >
-                  {resetting ? 'Resetting...' : 'Yes, Reset Everything'}
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </main>
   )
 }

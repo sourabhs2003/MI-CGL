@@ -17,7 +17,7 @@ export function TaskForm({ myUid }: Props) {
   const [priority, setPriority] = useState<TaskDoc['priority']>('Medium')
   const [taskMode, setTaskMode] = useState<TaskMode>('subject')
   const [taskType, setTaskType] = useState<Exclude<TaskDoc['type'], 'target'>>('study')
-  const [targetType, setTargetType] = useState<TaskDoc['targetType']>('time')
+  const [targetType] = useState<TaskDoc['targetType']>('time')
   const [duration, setDuration] = useState<number | undefined>()
   const [notes, setNotes] = useState('')
   const [isGroupTask, setIsGroupTask] = useState(false)
@@ -111,18 +111,6 @@ export function TaskForm({ myUid }: Props) {
           </>
         ) : (
           <>
-            <label className="field full">
-              <span>Type</span>
-              <select
-                value={targetType}
-                onChange={(e) => setTargetType(e.target.value as TaskDoc['targetType'])}
-              >
-                <option value="time">Study 2 hours</option>
-                <option value="chapter">Complete chapter</option>
-                <option value="custom">Workout</option>
-              </select>
-            </label>
-
             <label className="field full">
               <span>Task Title</span>
               <input
