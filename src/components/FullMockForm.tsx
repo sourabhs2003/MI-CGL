@@ -1,5 +1,6 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { getDefaultFullOverall, getDefaultFullSections } from '../services/mocks'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { FullExamType, FullMockSection, MockOverall, SectionName } from '../types'
 
 type Props = {
@@ -31,6 +32,7 @@ export function FullMockForm({ onSubmit, busy = false }: Props) {
   const [overall, setOverall] = useState<MockOverall>(getDefaultFullOverall())
   const [sections, setSections] = useState<FullMockSection[]>(getDefaultFullSections())
   const [error, setError] = useState('')
+  const [expandedSections, setExpandedSections] = useState<Set<SectionName>>(new Set())
 
   const validationError = useMemo(() => {
     const overallError = validateOverall(overall)
@@ -45,6 +47,18 @@ export function FullMockForm({ onSubmit, busy = false }: Props) {
 
   function updateOverall<K extends keyof MockOverall>(key: K, value: MockOverall[K]) {
     setOverall((current) => ({ ...current, [key]: value }))
+  }
+
+  function toggleSection(sectionName: SectionName) {
+    setExpandedSections((prev) => {
+      const next = new Set(prev)
+      if (next.has(sectionName)) {
+        next.delete(sectionName)
+      } else {
+        next.add(sectionName)
+      }
+      return next
+    })
   }
 
   function updateSection(index: number, key: keyof FullMockSection, value: number) {
@@ -70,87 +84,140 @@ export function FullMockForm({ onSubmit, busy = false }: Props) {
   }
 
   return (
-    <form className="dynamic-mock-form" onSubmit={handleSubmit}>
-      <div className="field full">
-        <span>Tier</span>
-        <select value={exam} onChange={(e) => setExam(e.target.value as FullExamType)}>
-          <option value="SSC CGL Tier 1">Tier 1</option>
-          <option value="SSC CGL Tier 2">Tier 2</option>
-        </select>
+    <form className="mock-entry-form" onSubmit={handleSubmit}>
+      <div className="mock-section-label">Basic Info</div>
+      <div className="mock-field-full">
+        <label className="mock-field">
+          <span>Tier</span>
+          <select value={exam} onChange={(e) => setExam(e.target.value as FullExamType)}>
+            <option value="SSC CGL Tier 1">Tier 1</option>
+            <option value="SSC CGL Tier 2">Tier 2</option>
+          </select>
+        </label>
       </div>
 
-      <div className="field-row">
-        <label className="field">
+      <div className="mock-section-label">Performance</div>
+      <div className="mock-field-row">
+        <label className="mock-field">
           <span>Score</span>
-          <input type="number" min={0} value={overall.score} onChange={(e) => updateOverall('score', Number(e.target.value))} />
+          <input 
+            type="number" 
+            step="0.01" 
+            placeholder="Enter score"
+            value={overall.score || ''}
+            onChange={(e) => updateOverall('score', e.target.value ? Number(e.target.value) : 0)} 
+          />
         </label>
-        <label className="field">
+        <label className="mock-field">
           <span>Total</span>
-          <input type="number" min={0} value={overall.total} onChange={(e) => updateOverall('total', Number(e.target.value))} />
+          <input 
+            type="number" 
+            step="0.01" 
+            placeholder="Enter total"
+            value={overall.total || ''}
+            onChange={(e) => updateOverall('total', e.target.value ? Number(e.target.value) : 0)} 
+          />
         </label>
       </div>
 
-      <div className="field-row">
-        <label className="field">
+      <div className="mock-field-row">
+        <label className="mock-field">
           <span>Attempted</span>
-          <input type="number" min={0} value={overall.attempted} onChange={(e) => updateOverall('attempted', Number(e.target.value))} />
+          <input 
+            type="number" 
+            step="0.01" 
+            placeholder="Enter attempted"
+            value={overall.attempted || ''}
+            onChange={(e) => updateOverall('attempted', e.target.value ? Number(e.target.value) : 0)} 
+          />
         </label>
-        <label className="field">
+        <label className="mock-field">
           <span>Accuracy</span>
-          <input type="number" min={0} max={100} value={overall.accuracy} onChange={(e) => updateOverall('accuracy', Number(e.target.value))} />
+          <input 
+            type="number" 
+            step="0.01" 
+            placeholder="Enter accuracy"
+            value={overall.accuracy || ''}
+            onChange={(e) => updateOverall('accuracy', e.target.value ? Number(e.target.value) : 0)} 
+          />
         </label>
       </div>
 
-      <div className="field-row">
-        <label className="field">
-          <span>Time</span>
-          <input type="number" min={0} value={overall.time} onChange={(e) => updateOverall('time', Number(e.target.value))} />
+      <div className="mock-field-row">
+        <label className="mock-field">
+          <span>Time (min)</span>
+          <input 
+            type="number" 
+            step="0.01" 
+            placeholder="Enter time"
+            value={overall.time || ''}
+            onChange={(e) => updateOverall('time', e.target.value ? Number(e.target.value) : 0)} 
+          />
         </label>
-        <label className="field">
+        <label className="mock-field">
           <span>Percentile</span>
-          <input type="number" min={0} max={100} value={overall.percentile ?? 0} onChange={(e) => updateOverall('percentile', Number(e.target.value))} />
+          <input 
+            type="number" 
+            step="0.01" 
+            placeholder="Enter percentile"
+            value={overall.percentile ?? ''}
+            onChange={(e) => updateOverall('percentile', e.target.value ? Number(e.target.value) : undefined)} 
+          />
         </label>
       </div>
 
-      <section className="mock-sections-grid">
-        {sections.map((section, index) => (
-          <div key={section.name} className="mock-section-card">
-            <div className="home-block-head">
-              <h3>{sectionLabels[section.name]}</h3>
+      <div className="mock-section-label">Section-wise Breakdown</div>
+      <div className="mock-sections-accordion">
+        {sections.map((section, index) => {
+          const isExpanded = expandedSections.has(section.name)
+          return (
+            <div key={section.name} className="mock-accordion-item">
+              <button
+                type="button"
+                className="mock-accordion-header"
+                onClick={() => toggleSection(section.name)}
+              >
+                <span>{sectionLabels[section.name]}</span>
+                {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              </button>
+              {isExpanded && (
+                <div className="mock-accordion-content">
+                  <div className="mock-field-row">
+                    <label className="mock-field">
+                      <span>Score</span>
+                      <input 
+                        type="number" 
+                        step="0.01" 
+                        placeholder="Enter score"
+                        value={section.score || ''}
+                        onChange={(e) => updateSection(index, 'score', e.target.value ? Number(e.target.value) : 0)} 
+                      />
+                    </label>
+                    <label className="mock-field">
+                      <span>Total</span>
+                      <input 
+                        type="number" 
+                        step="0.01" 
+                        placeholder="Enter total"
+                        value={section.total || ''}
+                        onChange={(e) => updateSection(index, 'total', e.target.value ? Number(e.target.value) : 0)} 
+                      />
+                    </label>
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="field-row">
-              <label className="field">
-                <span>Score</span>
-                <input type="number" min={0} value={section.score} onChange={(e) => updateSection(index, 'score', Number(e.target.value))} />
-              </label>
-              <label className="field">
-                <span>Total</span>
-                <input type="number" min={0} value={section.total} onChange={(e) => updateSection(index, 'total', Number(e.target.value))} />
-              </label>
-            </div>
-            <div className="field-row">
-              <label className="field">
-                <span>Attempted</span>
-                <input type="number" min={0} value={section.attempted} onChange={(e) => updateSection(index, 'attempted', Number(e.target.value))} />
-              </label>
-              <label className="field">
-                <span>Accuracy</span>
-                <input type="number" min={0} max={100} value={section.accuracy} onChange={(e) => updateSection(index, 'accuracy', Number(e.target.value))} />
-              </label>
-            </div>
-            <label className="field full">
-              <span>Time</span>
-              <input type="number" min={0} value={section.time} onChange={(e) => updateSection(index, 'time', Number(e.target.value))} />
-            </label>
-          </div>
-        ))}
-      </section>
+          )
+        })}
+      </div>
 
-      {error ? <p className="form-error">{error}</p> : null}
+      {error && <p className="mock-form-error">{error}</p>}
 
-      <button type="submit" className="btn primary full-width" disabled={busy}>
-        {busy ? 'Saving mock...' : 'Save full mock'}
-      </button>
+      <div className="mock-form-actions">
+        <button type="submit" className="mock-save-btn" disabled={busy}>
+          {busy ? 'Saving...' : 'Save Mock'}
+        </button>
+      </div>
     </form>
   )
 }

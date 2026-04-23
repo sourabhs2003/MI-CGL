@@ -1,13 +1,20 @@
 import {
   collection,
   doc,
+  getDoc,
   increment,
+  onSnapshot,
+  query,
   runTransaction,
   serverTimestamp,
+  setDoc,
+  where,
 } from 'firebase/firestore'
 import { format } from 'date-fns'
 import { getDb } from '../firebase'
 import { xpFromStudySeconds } from '../lib/xp'
+import { currentMonthKey, isFrozenProfile } from '../lib/activityStatus'
+import { calculateStudyXP, isSessionSuspicious } from './xpCalculation'
 import type { Subject, TimeOfDay } from '../types'
 
 type StudySessionInput = {
@@ -68,6 +75,10 @@ async function persistStudySession(uid: string, input: StudySessionInput): Promi
     const prev = userSnap.exists()
       ? (userSnap.data() as Record<string, unknown>)
       : { xp: 0, streak: 0, lastStudyDay: null }
+    const wasFrozen = isFrozenProfile(prev)
+    const monthKey = currentMonthKey()
+    const currentMonthlyXp = prev.xpMonth === monthKey ? Number(prev.xp) || 0 : 0
+    const eligibleXp = wasFrozen ? 0 : studyXp
 
     const lastDay = (prev.lastStudyDay as string | null) ?? null
     const curStreak = Number(prev.streak) || 0
@@ -101,9 +112,14 @@ async function persistStudySession(uid: string, input: StudySessionInput): Promi
     tx.set(
       userRef,
       {
-        xp: increment(studyXp),
+        xp: currentMonthlyXp + eligibleXp,
+        lifetimeXp: increment(eligibleXp),
+        xpMonth: monthKey,
         streak: newStreak,
         lastStudyDay: today,
+        isFrozen: false,
+        frozenAt: null,
+        comebackAt: wasFrozen ? serverTimestamp() : (prev.comebackAt ?? null),
       },
       { merge: true },
     )
@@ -164,4 +180,200 @@ export async function saveStudySession(
     enqueueSession(uid, input)
     return { queued: true }
   }
+}
+
+// ==================== START-STOP SESSION SYSTEM ====================
+
+export type ActiveSession = {
+  id: string
+  userId: string
+  subject: Subject
+  startTime: number
+  endTime: number | null
+  duration: number
+  isManual: boolean
+  isSuspicious: boolean
+  dateKey: string
+}
+
+/**
+ * Start a new study session
+ * Creates a session document with endTime: null (active)
+ */
+export async function startSession(uid: string, subject: Subject): Promise<string> {
+  const db = getDb()
+  const today = format(new Date(), 'yyyy-MM-dd')
+  const sessionRef = doc(collection(db, `users/${uid}/sessions`))
+
+  await setDoc(sessionRef, {
+    subject,
+    startTime: Date.now(),
+    endTime: null,
+    duration: 0,
+    isManual: false,
+    isSuspicious: false,
+    dateKey: today,
+    dayKey: today,
+  })
+
+  // Update user's current session reference
+  await setDoc(doc(db, 'users', uid), { currentSessionId: sessionRef.id }, { merge: true })
+
+  return sessionRef.id
+}
+
+/**
+ * Stop an active session
+ * Calculates duration, checks for suspicious activity, awards XP
+ */
+export async function stopSession(uid: string, sessionId: string): Promise<void> {
+  if (!uid || !sessionId) {
+    console.error('stopSession called with invalid parameters:', { uid, sessionId })
+    throw new Error('Invalid parameters: uid and sessionId are required')
+  }
+
+  const db = getDb()
+  const sessionRef = doc(db, `users/${uid}/sessions`, sessionId)
+
+  await runTransaction(db, async (tx) => {
+    // Do all reads first
+    const sessionSnap = await tx.get(sessionRef)
+    if (!sessionSnap.exists()) {
+      console.error('Session not found:', sessionId)
+      throw new Error('Session not found')
+    }
+
+    const userRef = doc(db, 'users', uid)
+    const userSnap = await tx.get(userRef)
+
+    const session = sessionSnap.data() as { startTime: number; subject: Subject; dateKey: string }
+    const endTime = Date.now()
+    const durationMs = endTime - session.startTime
+    const durationSec = Math.max(0, Math.round(durationMs / 1000))
+    const isSuspicious = isSessionSuspicious(durationSec)
+
+    console.log('Stopping session:', { sessionId, durationMs, durationSec, isSuspicious })
+
+    const studyXp = calculateStudyXP(durationSec, false, isSuspicious)
+
+    const prev = userSnap.exists()
+      ? (userSnap.data() as Record<string, unknown>)
+      : { xp: 0, streak: 0, lastStudyDay: null }
+    const wasFrozen = isFrozenProfile(prev)
+    const monthKey = currentMonthKey()
+    const currentMonthlyXp = prev.xpMonth === monthKey ? Number(prev.xp) || 0 : 0
+    const eligibleXp = wasFrozen ? 0 : studyXp
+
+    const lastDay = (prev.lastStudyDay as string | null) ?? null
+    const curStreak = Number(prev.streak) || 0
+
+    let newStreak = curStreak
+    if (lastDay === session.dateKey) {
+      newStreak = curStreak
+    } else if (lastDay == null) {
+      newStreak = 1
+    } else {
+      const last = new Date(lastDay + 'T12:00:00')
+      const t = new Date(session.dateKey + 'T12:00:00')
+      const diffMs = t.getTime() - last.getTime()
+      const diffDays = Math.round(diffMs / (24 * 3600 * 1000))
+      if (diffDays === 1) newStreak = curStreak + 1
+      else newStreak = 1
+    }
+
+    console.log('Updating user:', { studyXp, newStreak })
+
+    // Do all writes after reads
+    tx.update(sessionRef, {
+      endTime,
+      duration: durationMs,
+      durationSec,
+      isSuspicious,
+      endedAt: serverTimestamp(),
+    })
+
+    tx.update(userRef, {
+      xp: currentMonthlyXp + eligibleXp,
+      lifetimeXp: increment(eligibleXp),
+      xpMonth: monthKey,
+      streak: newStreak,
+      lastStudyDay: session.dateKey,
+      isFrozen: false,
+      frozenAt: null,
+      comebackAt: wasFrozen ? serverTimestamp() : (prev.comebackAt ?? null),
+      currentSessionId: null,
+    })
+
+    // Update daily stats
+    const dailyRef = doc(db, `users/${uid}/dailyStats`, session.dateKey)
+    tx.set(
+      dailyRef,
+      {
+        totalSec: increment(durationSec),
+        sessionCount: increment(1),
+        [`subjects.${session.subject}`]: increment(durationSec),
+      },
+      { merge: true },
+    )
+  })
+}
+
+/**
+ * Get current user's active session
+ * Returns null if no active session
+ */
+export async function getActiveSession(uid: string): Promise<ActiveSession | null> {
+  const db = getDb()
+  const userRef = doc(db, 'users', uid)
+  const userSnap = await getDoc(userRef)
+
+  if (!userSnap.exists()) return null
+
+  const userData = userSnap.data() as { currentSessionId: string | null }
+  if (!userData.currentSessionId) return null
+
+  const sessionRef = doc(db, `users/${uid}/sessions`, userData.currentSessionId)
+  const sessionSnap = await getDoc(sessionRef)
+
+  if (!sessionSnap.exists()) return null
+
+  return { id: sessionSnap.id, ...sessionSnap.data() } as ActiveSession
+}
+
+/**
+ * Listen to active sessions across all users for live squad status
+ * Returns unsubscribe function
+ */
+export function listenToActiveSessions(callback: (sessions: ActiveSession[]) => void): () => void {
+  const db = getDb()
+  const q = query(
+    collection(db, 'users'),
+    where('currentSessionId', '!=', null),
+  )
+
+  // Note: This is a simplified version. In production, you'd need to query
+  // the sessions collection directly with a composite index on endTime
+  // For now, we'll query all users and filter
+  const unsubscribe = onSnapshot(q, async (snapshot) => {
+    const activeSessions: ActiveSession[] = []
+
+    for (const userDoc of snapshot.docs) {
+      const userData = userDoc.data() as { currentSessionId: string | null }
+      if (!userData.currentSessionId) continue
+
+      const sessionRef = doc(db, `users/${userDoc.id}/sessions`, userData.currentSessionId)
+      const sessionSnap = await getDoc(sessionRef)
+
+      if (sessionSnap.exists()) {
+        const session = sessionSnap.data() as ActiveSession
+        if (session.endTime === null) {
+          activeSessions.push({ ...session, userId: userDoc.id })
+        }
+      }
+    }
+
+    callback(activeSessions)
+  })
+
+  return unsubscribe
 }

@@ -1,6 +1,7 @@
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
 import { getDb } from '../firebase'
 import { getIdentity } from '../lib/identity'
+import { currentMonthKey, getMonthlyXp, isFrozenProfile } from '../lib/activityStatus'
 import type { UserProfile } from '../types'
 
 export async function ensureUserProfile(uid: string): Promise<void> {
@@ -38,8 +39,11 @@ export async function ensureUserProfile(uid: string): Promise<void> {
 
   await setDoc(ref, {
     xp: 0,
+    lifetimeXp: 0,
+    xpMonth: currentMonthKey(),
     streak: 0,
     lastStudyDay: null,
+    isFrozen: false,
     displayName: nextIdentity.displayName,
     avatarIcon: nextIdentity.avatarIcon,
     avatarColor: nextIdentity.avatarColor,
@@ -52,9 +56,14 @@ export function profileFromSnap(data: Record<string, unknown> | undefined): User
     return { xp: 0, streak: 0, lastStudyDay: null }
   }
   return {
-    xp: Number(data.xp) || 0,
+    xp: getMonthlyXp(data),
+    lifetimeXp: Number(data.lifetimeXp) || Number(data.xp) || 0,
+    xpMonth: (data.xpMonth as string | null) ?? null,
     streak: Number(data.streak) || 0,
     lastStudyDay: (data.lastStudyDay as string) ?? null,
+    isFrozen: isFrozenProfile(data),
+    frozenAt: data.frozenAt,
+    comebackAt: data.comebackAt,
     displayName: data.displayName as string | undefined,
     avatarIcon: data.avatarIcon as string | undefined,
     avatarColor: data.avatarColor as string | undefined,

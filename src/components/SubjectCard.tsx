@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { BookOpen, Brain, Calculator, ClipboardList, Globe, Layers3 } from 'lucide-react'
+import { BookOpen, Brain, Calculator, ClipboardList, Globe, Layers3, Folder } from 'lucide-react'
 import type { Subject } from '../types'
 
 type SubjectCardProps = {
@@ -9,12 +9,13 @@ type SubjectCardProps = {
 }
 
 const DETAILS: Record<Subject, { icon: typeof Calculator; color: string }> = {
-  Maths: { icon: Calculator, color: '#22c55e' },
-  GS: { icon: Globe, color: '#facc15' },
-  English: { icon: BookOpen, color: '#94a3b8' },
-  Reasoning: { icon: Brain, color: '#ef4444' },
+  Maths: { icon: Calculator, color: '#3ABEFF' },
+  GS: { icon: Globe, color: '#FF9F43' },
+  English: { icon: BookOpen, color: '#A66CFF' },
+  Reasoning: { icon: Brain, color: '#2ED573' },
   Mock: { icon: ClipboardList, color: '#38bdf8' },
   Mixed: { icon: Layers3, color: '#94a3b8' },
+  Miscellaneous: { icon: Folder, color: '#a855f7' },
 }
 
 export function SubjectCard({ subject, selected, onClick }: SubjectCardProps) {

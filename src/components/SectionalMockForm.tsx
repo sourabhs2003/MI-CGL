@@ -44,56 +44,98 @@ export function SectionalMockForm({ onSubmit, busy = false }: Props) {
   }
 
   return (
-    <form className="dynamic-mock-form" onSubmit={handleSubmit}>
-      <label className="field full">
-        <span>Section</span>
-        <select value={subject} onChange={(e) => setSubject(e.target.value as SectionalMockDoc['subject'])}>
-          {sectionalSubjects.map((item) => (
-            <option key={item} value={item}>
-              {item === 'Maths' ? 'Quant' : item === 'GS' ? 'GA' : item}
-            </option>
-          ))}
-        </select>
-      </label>
+    <form className="mock-entry-form" onSubmit={handleSubmit}>
+      <div className="mock-section-label">Basic Info</div>
+      <div className="mock-field-full">
+        <label className="mock-field">
+          <span>Section</span>
+          <select value={subject} onChange={(e) => setSubject(e.target.value as SectionalMockDoc['subject'])}>
+            {sectionalSubjects.map((item) => (
+              <option key={item} value={item}>
+                {item === 'Maths' ? 'Quant' : item === 'GS' ? 'GA' : item}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
 
-      <div className="field-row">
-        <label className="field">
+      <div className="mock-section-label">Performance</div>
+      <div className="mock-field-row">
+        <label className="mock-field">
           <span>Score</span>
-          <input type="number" min={0} value={overall.score} onChange={(e) => updateOverall('score', Number(e.target.value))} />
+          <input 
+            type="number" 
+            step="0.01" 
+            placeholder="Enter score"
+            value={overall.score || ''}
+            onChange={(e) => updateOverall('score', e.target.value ? Number(e.target.value) : 0)} 
+          />
         </label>
-        <label className="field">
+        <label className="mock-field">
           <span>Total</span>
-          <input type="number" min={0} value={overall.total} onChange={(e) => updateOverall('total', Number(e.target.value))} />
+          <input 
+            type="number" 
+            step="0.01" 
+            placeholder="Enter total"
+            value={overall.total || ''}
+            onChange={(e) => updateOverall('total', e.target.value ? Number(e.target.value) : 0)} 
+          />
         </label>
       </div>
 
-      <div className="field-row">
-        <label className="field">
+      <div className="mock-field-row">
+        <label className="mock-field">
           <span>Attempted</span>
-          <input type="number" min={0} value={overall.attempted} onChange={(e) => updateOverall('attempted', Number(e.target.value))} />
+          <input 
+            type="number" 
+            step="0.01" 
+            placeholder="Enter attempted"
+            value={overall.attempted || ''}
+            onChange={(e) => updateOverall('attempted', e.target.value ? Number(e.target.value) : 0)} 
+          />
         </label>
-        <label className="field">
+        <label className="mock-field">
           <span>Accuracy</span>
-          <input type="number" min={0} max={100} value={overall.accuracy} onChange={(e) => updateOverall('accuracy', Number(e.target.value))} />
+          <input 
+            type="number" 
+            step="0.01" 
+            placeholder="Enter accuracy"
+            value={overall.accuracy || ''}
+            onChange={(e) => updateOverall('accuracy', e.target.value ? Number(e.target.value) : 0)} 
+          />
         </label>
       </div>
 
-      <div className="field-row">
-        <label className="field">
-          <span>Time</span>
-          <input type="number" min={0} value={overall.time} onChange={(e) => updateOverall('time', Number(e.target.value))} />
+      <div className="mock-field-row">
+        <label className="mock-field">
+          <span>Time (min)</span>
+          <input 
+            type="number" 
+            step="0.01" 
+            placeholder="Enter time"
+            value={overall.time || ''}
+            onChange={(e) => updateOverall('time', e.target.value ? Number(e.target.value) : 0)} 
+          />
         </label>
-        <label className="field">
+        <label className="mock-field">
           <span>Percentile</span>
-          <input type="number" min={0} max={100} value={overall.percentile ?? 0} onChange={(e) => updateOverall('percentile', Number(e.target.value))} />
+          <input 
+            type="number" 
+            step="0.01" 
+            placeholder="Enter percentile"
+            value={overall.percentile ?? ''}
+            onChange={(e) => updateOverall('percentile', e.target.value ? Number(e.target.value) : undefined)} 
+          />
         </label>
       </div>
 
-      {error ? <p className="form-error">{error}</p> : null}
+      {error && <p className="mock-form-error">{error}</p>}
 
-      <button type="submit" className="btn primary full-width" disabled={busy}>
-        {busy ? 'Saving mock...' : 'Save sectional mock'}
-      </button>
+      <div className="mock-form-actions">
+        <button type="submit" className="mock-save-btn" disabled={busy}>
+          {busy ? 'Saving...' : 'Save Mock'}
+        </button>
+      </div>
     </form>
   )
 }

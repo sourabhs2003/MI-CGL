@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore'
 import { format } from 'date-fns'
 import { getDb } from '../firebase'
+import { currentMonthKey, isFrozenProfile } from '../lib/activityStatus'
 import { XP_TASK_DONE } from '../lib/xp'
 import type { TaskDoc } from '../types'
 
@@ -180,12 +181,18 @@ export async function completeTask(uid: string, task: TaskDoc): Promise<void> {
         ? data.completedBy.filter((entry): entry is string => typeof entry === 'string')
         : []
       if (completedBy.includes(uid)) return
+      const userRef = doc(db, 'users', uid)
+      const userSnap = await tx.get(userRef)
+      const prev = userSnap.exists() ? (userSnap.data() as Record<string, unknown>) : {}
+      const monthKey = currentMonthKey()
+      const currentMonthlyXp = prev.xpMonth === monthKey ? Number(prev.xp) || 0 : 0
+      const earnedXp = isFrozenProfile(prev) ? 0 : getTaskXp(task.priority)
 
       tx.update(groupRef, {
         completedBy: arrayUnion(uid),
         [`completedAtBy.${uid}`]: serverTimestamp(),
       })
-      tx.set(doc(db, 'users', uid), { xp: increment(getTaskXp(task.priority)) }, { merge: true })
+      tx.set(userRef, { xp: currentMonthlyXp + earnedXp, lifetimeXp: increment(earnedXp), xpMonth: monthKey }, { merge: true })
     })
     return
   }
@@ -196,9 +203,15 @@ export async function completeTask(uid: string, task: TaskDoc): Promise<void> {
     if (!snap.exists()) return
     const data = snap.data() as Record<string, unknown>
     if (data.completed) return
+    const userRef = doc(db, 'users', uid)
+    const userSnap = await tx.get(userRef)
+    const prev = userSnap.exists() ? (userSnap.data() as Record<string, unknown>) : {}
+    const monthKey = currentMonthKey()
+    const currentMonthlyXp = prev.xpMonth === monthKey ? Number(prev.xp) || 0 : 0
+    const earnedXp = isFrozenProfile(prev) ? 0 : getTaskXp(task.priority)
 
     tx.update(ref, { completed: true, completedAt: serverTimestamp() })
-    tx.set(doc(db, 'users', uid), { xp: increment(getTaskXp(task.priority)) }, { merge: true })
+    tx.set(userRef, { xp: currentMonthlyXp + earnedXp, lifetimeXp: increment(earnedXp), xpMonth: monthKey }, { merge: true })
   })
 }
 

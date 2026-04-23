@@ -26,7 +26,9 @@ function burst() {
 }
 
 export function TaskList({ myUid, tasks }: Props) {
-  if (tasks.length === 0) {
+  const activeTasks = tasks.filter(task => !task.completed)
+  
+  if (activeTasks.length === 0) {
     return <p className="muted">No tasks</p>
   }
 
@@ -38,7 +40,7 @@ export function TaskList({ myUid, tasks }: Props) {
 
       <ul className="task-list">
         <AnimatePresence mode="popLayout">
-          {tasks.map((task) => (
+          {activeTasks.map((task) => (
             <motion.li
               key={task.id}
               initial={{ opacity: 0, y: 12, scale: 0.98 }}

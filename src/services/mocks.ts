@@ -12,6 +12,7 @@ import {
 import { getDb } from '../firebase'
 import { todayKey } from '../lib/dates'
 import { XP_MOCK_DONE } from '../lib/xp'
+import { currentMonthKey, isFrozenProfile } from '../lib/activityStatus'
 import { saveStudySession } from './studySession'
 import type { FullExamType, FullMockDoc, FullMockSection, MockDoc, MockOverall, SectionName, SectionalMockDoc } from '../types'
 
@@ -30,6 +31,11 @@ function sanitizeOverall(input: unknown, fallbackTotal: number): MockOverall {
     time: Math.max(0, Number(raw.time) || 0),
     percentile:
       raw.percentile == null ? undefined : Math.max(0, Math.min(100, Number(raw.percentile) || 0)),
+    rank: raw.rank == null ? undefined : Math.max(0, Number(raw.rank) || 0),
+    rankTotal: raw.rankTotal == null ? undefined : Math.max(0, Number(raw.rankTotal) || 0),
+    correct: raw.correct == null ? undefined : Math.max(0, Number(raw.correct) || 0),
+    incorrect: raw.incorrect == null ? undefined : Math.max(0, Number(raw.incorrect) || 0),
+    unattempted: raw.unattempted == null ? undefined : Math.max(0, Number(raw.unattempted) || 0),
   }
 }
 
@@ -174,14 +180,14 @@ export function subscribeMocks(uid: string, cb: (rows: MockDoc[]) => void) {
   )
 }
 
-export async function addFullMock(uid: string, input: FullMockInput): Promise<void> {
+export async function addFullMock(uid: string, input: FullMockInput, source: 'manual' | 'ocr' = 'manual'): Promise<void> {
   const payload: Omit<FullMockDoc, 'id' | 'createdAt'> = {
     type: 'full',
     label: `Full Mock (${input.exam === 'SSC CGL Tier 2' ? 'T2' : 'T1'})`,
     exam: input.exam,
     overall: sanitizeOverall(input.overall, 200),
     sections: fixedSections.map((name, index) => sanitizeFullSection(input.sections[index], name)),
-    source: 'manual',
+    source,
     dayKey: todayKey(),
     schemaVersion: 2,
   }
@@ -194,13 +200,13 @@ export async function addFullMock(uid: string, input: FullMockInput): Promise<vo
   })
 }
 
-export async function addSectionalMock(uid: string, input: SectionalMockInput): Promise<void> {
+export async function addSectionalMock(uid: string, input: SectionalMockInput, source: 'manual' | 'ocr' = 'manual'): Promise<void> {
   const payload: Omit<SectionalMockDoc, 'id' | 'createdAt'> = {
     type: 'sectional',
     label: `Sectional Mock • ${input.subject}`,
     subject: input.subject,
     overall: sanitizeOverall(input.overall, 50),
-    source: 'manual',
+    source,
     dayKey: todayKey(),
     schemaVersion: 2,
   }
@@ -216,13 +222,30 @@ export async function addSectionalMock(uid: string, input: SectionalMockInput): 
 async function saveMock(uid: string, payload: Omit<MockDoc, 'id' | 'createdAt'>): Promise<void> {
   const db = getDb()
   await runTransaction(db, async (tx) => {
+    const userRef = doc(db, 'users', uid)
+    const userSnap = await tx.get(userRef)
+    const prev = userSnap.exists() ? (userSnap.data() as Record<string, unknown>) : {}
+    const wasFrozen = isFrozenProfile(prev)
+    const monthKey = currentMonthKey()
+    const currentMonthlyXp = prev.xpMonth === monthKey ? Number(prev.xp) || 0 : 0
+    const earnedXp = wasFrozen ? 0 : XP_MOCK_DONE
     const mockRef = doc(collection(db, `users/${uid}/mocks`))
     tx.set(mockRef, {
       ...payload,
       createdAt: serverTimestamp(),
     })
-    const userRef = doc(db, 'users', uid)
-    tx.set(userRef, { xp: increment(XP_MOCK_DONE) }, { merge: true })
+    tx.set(
+      userRef,
+      {
+        xp: currentMonthlyXp + earnedXp,
+        lifetimeXp: increment(earnedXp),
+        xpMonth: monthKey,
+        isFrozen: false,
+        frozenAt: null,
+        comebackAt: wasFrozen ? serverTimestamp() : (prev.comebackAt ?? null),
+      },
+      { merge: true },
+    )
   })
 }
 
@@ -253,6 +276,11 @@ export function getDefaultFullOverall(exam: FullExamType = 'SSC CGL Tier 1'): Mo
     accuracy: 0,
     time: 0,
     percentile: 0,
+    rank: undefined,
+    rankTotal: undefined,
+    correct: undefined,
+    incorrect: undefined,
+    unattempted: undefined,
   }
 }
 
@@ -264,5 +292,10 @@ export function getDefaultSectionalOverall(): MockOverall {
     accuracy: 0,
     time: 0,
     percentile: 0,
+    rank: undefined,
+    rankTotal: undefined,
+    correct: undefined,
+    incorrect: undefined,
+    unattempted: undefined,
   }
 }

@@ -1,1 +1,13 @@
 /// <reference types="vite/client" />
+
+interface ImportMetaEnv {
+  readonly VITE_GENKIT_URL?: string
+  readonly VITE_GENKIT_API_KEY?: string
+  readonly VITE_OPENAI_API_KEY?: string
+  readonly VITE_OPENAI_BASE_URL?: string
+  readonly VITE_OPENAI_VISION_MODEL?: string
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv
+}

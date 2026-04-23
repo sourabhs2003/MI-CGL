@@ -5,6 +5,7 @@ import { USERS } from '../lib/auth'
 import { lastNDaysKeys, todayKey } from '../lib/dates'
 import { toMillis } from '../lib/firestoreTime'
 import { capitalizeName, getIdentity } from '../lib/identity'
+import { normalizeStoredStudySeconds } from '../lib/studyDuration'
 import { profileFromSnap } from '../services/userProfile'
 
 export type HeatmapPoint = {
@@ -32,11 +33,13 @@ export type LeaderboardRow = {
   mockImprovement: number
   totalSessions: number
   lastActivity: string
+  latestTodayActivityMs: number
   consistencyDays: number
   inactive: boolean
   morningHours: number
   eveningHours: number
   topSubject: string
+  todaySubjects: Record<string, number>
   badges: string[]
   heatmap: HeatmapPoint[]
 }
@@ -124,14 +127,13 @@ export function useLeaderboard() {
         const today = todayKey()
         const weekKeys = new Set(lastNDaysKeys(7))
         const consistencyKeys = new Set(lastNDaysKeys(28))
-        const activeKeys = new Set(lastNDaysKeys(3))
+        const activeKeys = new Set(lastNDaysKeys(5))
         const heatmapKeys = lastNDaysKeys(35)
         const nextRows = await Promise.all(
           usersSnap.docs.map(async (userDoc) => {
             const uid = userDoc.id
             const profile = profileFromSnap(userDoc.data() as Record<string, unknown>)
-            const [dailyStatsSnap, sessionsSnap, mocksSnap] = await Promise.all([
-              getDocs(collection(db, `users/${uid}/dailyStats`)),
+            const [sessionsSnap, mocksSnap] = await Promise.all([
               getDocs(collection(db, `users/${uid}/sessions`)),
               getDocs(collection(db, `users/${uid}/mocks`)),
             ])
@@ -141,21 +143,13 @@ export function useLeaderboard() {
             let todaySec = 0
             let consistencyDays = 0
             let lastActivity = 'No activity'
+            let latestTodayActivityMs = 0
             let morningSec = 0
             let eveningSec = 0
             const subjectTotals = new Map<string, number>()
+            const todaySubjectTotals = new Map<string, number>()
             const heatmapLookup = new Map(heatmapKeys.map((key) => [key, 0]))
-
-            for (const statDoc of dailyStatsSnap.docs) {
-              const dayKey = statDoc.id
-              const totalForDay = Number((statDoc.data() as { totalSec?: number }).totalSec) || 0
-              totalSec += totalForDay
-              if (weekKeys.has(dayKey)) weekSec += totalForDay
-              if (dayKey === today) todaySec += totalForDay
-              if (consistencyKeys.has(dayKey) && totalForDay > 0) consistencyDays += 1
-              if (heatmapLookup.has(dayKey)) heatmapLookup.set(dayKey, totalForDay)
-              if (lastActivity === 'No activity' || dayKey > lastActivity) lastActivity = dayKey
-            }
+            const activeDays = new Set<string>()
 
             const mockMetrics = mocksSnap.docs
               .map((mockDoc) => getMockMetric(mockDoc.data() as Record<string, unknown>))
@@ -175,12 +169,43 @@ export function useLeaderboard() {
                 : 0
 
             for (const sessionDoc of sessionsSnap.docs) {
-              const data = sessionDoc.data() as { endedAt?: unknown; durationSec?: number; subject?: string; timeOfDay?: string }
+              const data = sessionDoc.data() as {
+                endedAt?: unknown
+                durationSec?: number
+                duration?: number
+                startTime?: unknown
+                endTime?: unknown
+                subject?: string
+                timeOfDay?: string
+                dayKey?: string
+                dateKey?: string
+              }
               const stamp = toMillis(data.endedAt)
-              const durationSec = Number(data.durationSec) || 0
+              const activityStamp = Math.max(stamp, toMillis(data.endTime) || 0, toMillis(data.startTime) || 0)
+              const durationSec = normalizeStoredStudySeconds({
+                durationSec: data.durationSec,
+                duration: data.duration,
+                startTime: data.startTime,
+                endTime: data.endTime,
+              })
               const subject = String(data.subject ?? '')
-              if (!stamp || durationSec <= 0) continue
+              const dayKey = String(data.dayKey ?? data.dateKey ?? (stamp ? todayKey() : ''))
+              if (!dayKey || durationSec <= 0) continue
+              totalSec += durationSec
+              if (weekKeys.has(dayKey)) weekSec += durationSec
+              if (dayKey === today) todaySec += durationSec
+              if (dayKey === today) {
+                latestTodayActivityMs = Math.max(latestTodayActivityMs, activityStamp)
+              }
+              activeDays.add(dayKey)
+              if (heatmapLookup.has(dayKey)) {
+                heatmapLookup.set(dayKey, (heatmapLookup.get(dayKey) ?? 0) + durationSec)
+              }
+              if (lastActivity === 'No activity' || dayKey > lastActivity) lastActivity = dayKey
               subjectTotals.set(subject, (subjectTotals.get(subject) ?? 0) + durationSec)
+              if (dayKey === today) {
+                todaySubjectTotals.set(subject, (todaySubjectTotals.get(subject) ?? 0) + durationSec)
+              }
               if (data.timeOfDay === 'morning' || data.timeOfDay === 'afternoon') morningSec += durationSec
               else if (data.timeOfDay === 'evening' || data.timeOfDay === 'night') eveningSec += durationSec
               else {
@@ -189,11 +214,12 @@ export function useLeaderboard() {
                 else eveningSec += durationSec
               }
             }
+            consistencyDays = [...activeDays].filter((dayKey) => consistencyKeys.has(dayKey)).length
 
             const fallbackName = profile.displayName || userNameByUid[uid] || 'User'
             const identity = getIdentity(fallbackName)
             const topSubject = [...subjectTotals.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'None'
-            const inactive = lastActivity === 'No activity' || !activeKeys.has(lastActivity)
+            const inactive = profile.isFrozen === true || lastActivity === 'No activity' || !activeKeys.has(lastActivity)
 
             const badges = buildBadges({
               consistencyDays,
@@ -224,11 +250,17 @@ export function useLeaderboard() {
               mockImprovement,
               totalSessions: sessionsSnap.size,
               lastActivity,
+              latestTodayActivityMs,
               consistencyDays,
               inactive,
               morningHours: roundHours(morningSec),
               eveningHours: roundHours(eveningSec),
               topSubject: topSubject === 'GS' ? 'GA' : topSubject,
+              todaySubjects: Object.fromEntries(
+                [...todaySubjectTotals.entries()]
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([subject, seconds]) => [subject === 'GS' ? 'GA' : subject, roundHours(seconds)]),
+              ),
               badges,
               heatmap: heatmapKeys.map((dayKey) => ({
                 dayKey,
@@ -239,6 +271,7 @@ export function useLeaderboard() {
         )
 
         nextRows.sort((a, b) => {
+          if (a.inactive !== b.inactive) return a.inactive ? 1 : -1
           if (b.xp !== a.xp) return b.xp - a.xp
           if (b.totalHours !== a.totalHours) return b.totalHours - a.totalHours
           return b.streak - a.streak

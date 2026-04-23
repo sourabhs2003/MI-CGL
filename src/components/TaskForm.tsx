@@ -1,28 +1,56 @@
-import { useState, type FormEvent } from 'react'
+import { useState, useEffect, useRef, type FormEvent } from 'react'
 import { todayKey } from '../lib/dates'
 import { addTask } from '../services/tasks'
-import type { Subject, TaskDoc } from '../types'
-import { SubjectSelector } from './SubjectSelector'
+import type { Subject } from '../types'
 
 type Props = {
   myUid: string
 }
 
-type TaskMode = 'subject' | 'target'
+const SUBJECTS: Subject[] = ['Maths', 'English', 'Reasoning', 'GS', 'Mock', 'Miscellaneous']
 
 export function TaskForm({ myUid }: Props) {
   const [title, setTitle] = useState('')
   const [subject, setSubject] = useState<Subject>('Maths')
   const [dateKey, setDateKey] = useState(todayKey())
-  const [priority, setPriority] = useState<TaskDoc['priority']>('Medium')
-  const [taskMode, setTaskMode] = useState<TaskMode>('subject')
-  const [taskType, setTaskType] = useState<Exclude<TaskDoc['type'], 'target'>>('study')
-  const [targetType] = useState<TaskDoc['targetType']>('time')
-  const [duration, setDuration] = useState<number | undefined>()
-  const [notes, setNotes] = useState('')
-  const [isGroupTask, setIsGroupTask] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [buttonAnimating, setButtonAnimating] = useState(false)
+  const titleInputRef = useRef<HTMLInputElement>(null)
+
+  // Load last selected subject from localStorage
+  useEffect(() => {
+    const lastSubject = localStorage.getItem('last-selected-subject')
+    if (lastSubject && SUBJECTS.includes(lastSubject as Subject)) {
+      setSubject(lastSubject as Subject)
+    }
+  }, [])
+
+  // Save last selected subject to localStorage
+  useEffect(() => {
+    localStorage.setItem('last-selected-subject', subject)
+  }, [subject])
+
+  function handleSubjectSelect(selectedSubject: Subject) {
+    setSubject(selectedSubject)
+    // Auto-focus title input after subject selection
+    setTimeout(() => titleInputRef.current?.focus(), 50)
+
+    // Smart behavior: auto-suggest title for Mock
+    if (selectedSubject === 'Mock' && !title) {
+      setTitle('Mock Test')
+    }
+  }
+
+  function getPlaceholder(): string {
+    if (subject === 'Miscellaneous') {
+      return 'e.g. Revision, Notes, Doubt solving'
+    }
+    if (subject === 'Mock') {
+      return 'e.g. Mock Test'
+    }
+    return 'e.g. Algebra revision, PYQ practice'
+  }
 
   async function onAdd(e: FormEvent) {
     e.preventDefault()
@@ -30,33 +58,21 @@ export function TaskForm({ myUid }: Props) {
       setError('Task title is required.')
       return
     }
-    if (taskMode === 'target' && targetType === 'time' && (!duration || duration <= 0)) {
-      setError('Enter a valid duration.')
-      return
-    }
 
     setBusy(true)
     setError('')
+    setButtonAnimating(true)
     try {
       await addTask(myUid, {
         title: title.trim(),
-        subject: taskMode === 'subject' ? subject : 'Target',
-        type: taskMode === 'subject' ? taskType : 'target',
-        targetType: taskMode === 'target' ? targetType : undefined,
+        subject,
+        type: 'study',
         dateKey,
-        priority,
-        duration: taskMode === 'target' && targetType === 'time' ? duration : undefined,
-        notes: taskMode === 'target' ? notes : undefined,
-        isGroupTask,
       })
       setTitle('')
-      setDuration(undefined)
-      setNotes('')
-      setIsGroupTask(false)
-      setTaskType('study')
-      setTaskMode('subject')
     } finally {
       setBusy(false)
+      setTimeout(() => setButtonAnimating(false), 200)
     }
   }
 
@@ -66,112 +82,47 @@ export function TaskForm({ myUid }: Props) {
         <h2>Add Task</h2>
       </div>
 
-      <form className="task-form dynamic-mock-form" onSubmit={onAdd}>
-        <div className="segmented-toggle">
-          <button
-            type="button"
-            className={taskMode === 'subject' ? 'btn primary' : 'btn ghost'}
-            onClick={() => setTaskMode('subject')}
-          >
-            Subject
-          </button>
-          <button
-            type="button"
-            className={taskMode === 'target' ? 'btn primary' : 'btn ghost'}
-            onClick={() => setTaskMode('target')}
-          >
-            Target
-          </button>
+      <form className="task-form" onSubmit={onAdd}>
+        <div className="field full">
+          <span>Subject</span>
+          <div className="subject-chips">
+            {SUBJECTS.map((s) => (
+              <button
+                key={s}
+                type="button"
+                className={`subject-chip ${subject === s ? 'selected' : ''}`}
+                onClick={() => handleSubjectSelect(s)}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {taskMode === 'subject' ? (
-          <>
-            <div className="field full">
-              <span>Subject</span>
-              <SubjectSelector value={subject} onChange={(next) => setSubject(next)} />
-            </div>
-
-            <label className="field full">
-              <span>Type</span>
-              <select value={taskType} onChange={(e) => setTaskType(e.target.value as Exclude<TaskDoc['type'], 'target'>)}>
-                <option value="study">Study</option>
-                <option value="mock">Mock</option>
-              </select>
-            </label>
-
-            <label className="field full">
-              <span>Task Title</span>
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. Algebra revision"
-                required
-              />
-            </label>
-          </>
-        ) : (
-          <>
-            <label className="field full">
-              <span>Task Title</span>
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. Complete Polity chapter"
-                required
-              />
-            </label>
-
-            {targetType === 'time' ? (
-              <label className="field full">
-                <span>Duration (minutes)</span>
-                <input
-                  type="number"
-                  min={1}
-                  value={duration ?? ''}
-                  onChange={(e) => setDuration(e.target.value ? Number(e.target.value) : undefined)}
-                />
-              </label>
-            ) : null}
-
-            <label className="field full">
-              <span>Notes</span>
-              <input
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Optional"
-              />
-            </label>
-          </>
-        )}
-
-        <div className="field-row">
-          <label className="field">
-            <span>Date</span>
-            <input type="date" value={dateKey} onChange={(e) => setDateKey(e.target.value)} />
-          </label>
-          <label className="field">
-            <span>Priority</span>
-            <select value={priority} onChange={(e) => setPriority(e.target.value as TaskDoc['priority'])}>
-              <option value="Low">Low</option>
-              <option value="Medium">Medium</option>
-              <option value="High">High</option>
-            </select>
-          </label>
-        </div>
-
-        <label className="toggle-row">
+        <label className="field full">
+          <span>Task Title</span>
           <input
-            type="checkbox"
-            checked={isGroupTask}
-            onChange={(event) => setIsGroupTask(event.target.checked)}
+            ref={titleInputRef}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder={getPlaceholder()}
+            required
           />
-          <span>Assign to group</span>
+        </label>
+
+        <label className="field full">
+          <span>Date</span>
+          <input type="date" value={dateKey} onChange={(e) => setDateKey(e.target.value)} />
         </label>
 
         {error ? <p className="form-error">{error}</p> : null}
 
-        <button type="submit" className="btn primary full-width" disabled={busy}>
-          {busy ? 'Adding...' : 'Add task'}
+        <button
+          type="submit"
+          className={`btn primary full-width add-task-btn ${buttonAnimating ? 'animating' : ''}`}
+          disabled={busy}
+        >
+          {busy ? 'Adding...' : 'Add Task'}
         </button>
       </form>
     </section>

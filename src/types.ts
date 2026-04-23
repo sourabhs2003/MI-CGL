@@ -1,4 +1,4 @@
-export type Subject = 'Maths' | 'GS' | 'English' | 'Reasoning' | 'Mock' | 'Mixed'
+export type Subject = 'Maths' | 'GS' | 'English' | 'Reasoning' | 'Mock' | 'Mixed' | 'Miscellaneous'
 
 export type MockType = 'full' | 'sectional'
 
@@ -10,8 +10,13 @@ export type SectionName = 'Reasoning' | 'GA' | 'Maths' | 'English'
 
 export interface UserProfile {
   xp: number
+  lifetimeXp?: number
+  xpMonth?: string | null
   streak: number
   lastStudyDay: string | null
+  isFrozen?: boolean
+  frozenAt?: unknown
+  comebackAt?: unknown
   displayName?: string
   avatarIcon?: string
   avatarColor?: string
@@ -69,6 +74,11 @@ export interface MockOverall {
   accuracy: number
   time: number
   percentile?: number
+  rank?: number
+  rankTotal?: number
+  correct?: number
+  incorrect?: number
+  unattempted?: number
 }
 
 export interface FullMockSection {

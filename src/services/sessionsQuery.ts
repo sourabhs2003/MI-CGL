@@ -6,6 +6,7 @@ import {
   query,
 } from 'firebase/firestore'
 import { getDb } from '../firebase'
+import { normalizeStoredStudySeconds } from '../lib/studyDuration'
 import type { StudySessionDoc, Subject, TimeOfDay } from '../types'
 
 export function subscribeRecentSessions(
@@ -28,7 +29,12 @@ export function subscribeRecentSessions(
           id: d.id,
           subject: x.subject as Subject,
           topic: String(x.topic ?? ''),
-          durationSec: Number(x.durationSec) || 0,
+          durationSec: normalizeStoredStudySeconds({
+            durationSec: x.durationSec,
+            duration: x.duration,
+            startTime: x.startTime,
+            endTime: x.endTime,
+          }),
           dayKey: String(x.dayKey ?? ''),
           startTime: typeof x.startTime === 'string' ? x.startTime : undefined,
           endTime: typeof x.endTime === 'string' ? x.endTime : undefined,

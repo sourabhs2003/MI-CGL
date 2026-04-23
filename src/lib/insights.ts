@@ -20,6 +20,7 @@ export function buildInsights(input: {
     GS: 0,
     Mock: 0,
     Mixed: 0,
+    Miscellaneous: 0,
   }
 
   for (const session of sessionsWeek) {
