@@ -30,12 +30,12 @@ function sanitizeOverall(input: unknown, fallbackTotal: number): MockOverall {
     accuracy: Math.max(0, Math.min(100, Number(raw.accuracy) || 0)),
     time: Math.max(0, Number(raw.time) || 0),
     percentile:
-      raw.percentile == null ? undefined : Math.max(0, Math.min(100, Number(raw.percentile) || 0)),
-    rank: raw.rank == null ? undefined : Math.max(0, Number(raw.rank) || 0),
-    rankTotal: raw.rankTotal == null ? undefined : Math.max(0, Number(raw.rankTotal) || 0),
-    correct: raw.correct == null ? undefined : Math.max(0, Number(raw.correct) || 0),
-    incorrect: raw.incorrect == null ? undefined : Math.max(0, Number(raw.incorrect) || 0),
-    unattempted: raw.unattempted == null ? undefined : Math.max(0, Number(raw.unattempted) || 0),
+      raw.percentile == null ? null : Math.max(0, Math.min(100, Number(raw.percentile) || 0)),
+    rank: raw.rank == null ? null : Math.max(0, Number(raw.rank) || 0),
+    rankTotal: raw.rankTotal == null ? null : Math.max(0, Number(raw.rankTotal) || 0),
+    correct: raw.correct == null ? null : Math.max(0, Number(raw.correct) || 0),
+    incorrect: raw.incorrect == null ? null : Math.max(0, Number(raw.incorrect) || 0),
+    unattempted: raw.unattempted == null ? null : Math.max(0, Number(raw.unattempted) || 0),
   }
 }
 
@@ -276,11 +276,11 @@ export function getDefaultFullOverall(exam: FullExamType = 'SSC CGL Tier 1'): Mo
     accuracy: 0,
     time: 0,
     percentile: 0,
-    rank: undefined,
-    rankTotal: undefined,
-    correct: undefined,
-    incorrect: undefined,
-    unattempted: undefined,
+    rank: null,
+    rankTotal: null,
+    correct: null,
+    incorrect: null,
+    unattempted: null,
   }
 }
 
@@ -292,10 +292,10 @@ export function getDefaultSectionalOverall(): MockOverall {
     accuracy: 0,
     time: 0,
     percentile: 0,
-    rank: undefined,
-    rankTotal: undefined,
-    correct: undefined,
-    incorrect: undefined,
-    unattempted: undefined,
+    rank: null,
+    rankTotal: null,
+    correct: null,
+    incorrect: null,
+    unattempted: null,
   }
 }

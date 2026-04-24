@@ -377,3 +377,140 @@ export function listenToActiveSessions(callback: (sessions: ActiveSession[]) => 
 
   return unsubscribe
 }
+
+/**
+ * Delete a study session and update daily stats
+ * This removes the session and deducts its time from daily stats
+ */
+export async function deleteSession(uid: string, sessionId: string): Promise<void> {
+  if (!uid || typeof uid !== 'string' || !uid.trim()) {
+    console.error('deleteSession called with invalid uid:', { uid })
+    throw new Error('Invalid uid')
+  }
+  if (!sessionId || typeof sessionId !== 'string' || !sessionId.trim()) {
+    console.error('deleteSession called with invalid sessionId:', { sessionId })
+    throw new Error('Invalid sessionId')
+  }
+
+  const db = getDb()
+  const cleanUid = uid.trim()
+  const cleanSessionId = sessionId.trim()
+
+  console.log('deleteSession: Creating doc ref with path:', `users/${cleanUid}/sessions/${cleanSessionId}`)
+
+  const sessionRef = doc(db, `users/${cleanUid}/sessions`, cleanSessionId)
+
+  await runTransaction(db, async (tx) => {
+    const sessionSnap = await tx.get(sessionRef)
+    if (!sessionSnap.exists()) {
+      console.error('Session not found:', sessionId)
+      throw new Error('Session not found')
+    }
+
+    const session = sessionSnap.data() as Record<string, unknown>
+    console.log('Session data:', session)
+
+    const durationSec = typeof session.durationSec === 'number' ? session.durationSec : 0
+    const subject = session.subject as Subject
+    const dateKey = (session.dateKey || session.dayKey) as string | undefined
+
+    if (!dateKey || typeof dateKey !== 'string' || !dateKey.trim()) {
+      console.error('Session has no valid dateKey or dayKey:', sessionId, session)
+      throw new Error('Session has no valid dateKey or dayKey')
+    }
+
+    // Delete the session
+    tx.delete(sessionRef)
+
+    // Update daily stats (deduct time)
+    const cleanDateKey = dateKey.trim()
+    console.log('Creating dailyRef with path:', `users/${cleanUid}/dailyStats/${cleanDateKey}`)
+    const dailyRef = doc(db, `users/${cleanUid}/dailyStats`, cleanDateKey)
+    tx.set(
+      dailyRef,
+      {
+        totalSec: increment(-durationSec),
+        sessionCount: increment(-1),
+        [`subjects.${subject}`]: increment(-durationSec),
+      },
+      { merge: true },
+    )
+  })
+}
+
+/**
+ * Update a study session's duration and subject
+ * Updates the session and adjusts daily stats accordingly
+ */
+export async function updateSession(
+  uid: string,
+  sessionId: string,
+  updates: { durationSec: number; subject: Subject },
+): Promise<void> {
+  if (!uid || typeof uid !== 'string' || !uid.trim()) {
+    console.error('updateSession called with invalid uid:', { uid })
+    throw new Error('Invalid uid')
+  }
+  if (!sessionId || typeof sessionId !== 'string' || !sessionId.trim()) {
+    console.error('updateSession called with invalid sessionId:', { sessionId })
+    throw new Error('Invalid sessionId')
+  }
+
+  const db = getDb()
+  const cleanUid = uid.trim()
+  const cleanSessionId = sessionId.trim()
+  const sessionRef = doc(db, `users/${cleanUid}/sessions`, cleanSessionId)
+
+  await runTransaction(db, async (tx) => {
+    const sessionSnap = await tx.get(sessionRef)
+    if (!sessionSnap.exists()) {
+      console.error('Session not found:', sessionId)
+      throw new Error('Session not found')
+    }
+
+    const session = sessionSnap.data() as { durationSec: number; subject: Subject; dateKey?: string; dayKey?: string }
+    const oldDurationSec = session.durationSec || 0
+    const oldSubject = session.subject
+    const newDurationSec = updates.durationSec
+    const newSubject = updates.subject
+    const dateKey = session.dateKey || session.dayKey
+
+    if (!dateKey) {
+      console.error('Session has no dateKey or dayKey:', sessionId, session)
+      throw new Error('Session has no dateKey or dayKey')
+    }
+
+    // Update the session
+    tx.update(sessionRef, {
+      durationSec: newDurationSec,
+      subject: newSubject,
+    })
+
+    // Update daily stats
+    const dailyRef = doc(db, `users/${cleanUid}/dailyStats`, dateKey)
+    const durationDiff = newDurationSec - oldDurationSec
+
+    if (oldSubject === newSubject) {
+      // Same subject, just update duration
+      tx.set(
+        dailyRef,
+        {
+          totalSec: increment(durationDiff),
+          [`subjects.${newSubject}`]: increment(durationDiff),
+        },
+        { merge: true },
+      )
+    } else {
+      // Different subject, deduct from old, add to new
+      tx.set(
+        dailyRef,
+        {
+          totalSec: increment(durationDiff),
+          [`subjects.${oldSubject}`]: increment(-oldDurationSec),
+          [`subjects.${newSubject}`]: increment(newDurationSec),
+        },
+        { merge: true },
+      )
+    }
+  })
+}

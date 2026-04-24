@@ -8,6 +8,7 @@ import { FocusPriority } from '../components/FocusPriority'
 import { TimePattern } from '../components/TimePattern'
 import { SwipeMockAnalytics } from '../components/SwipeMockAnalytics'
 import { MinimizedHeatmap } from '../components/MinimizedHeatmap'
+import { SessionHistory } from '../components/SessionHistory'
 import { useAuth } from '../context/AuthContext'
 import { useMocks, useSessions } from '../hooks/useFirestoreData'
 
@@ -60,6 +61,7 @@ export function DashboardPage() {
       <CompactInsight sessions={sessions} />
       <FocusPriority sessions={sessions} mocks={mocks} />
       <TimePattern sessions={sessions} />
+      <SessionHistory sessions={sessions} />
       <CollapsiblePlan sessions={sessions} />
       <div ref={mockRef}>
         {showMockAnalytics && <SwipeMockAnalytics mocks={mocks} />}
