@@ -215,7 +215,7 @@ export async function addSectionalMock(uid: string, input: SectionalMockInput, s
   await saveStudySession(uid, {
     subject: input.subject,
     topic: 'Mock bonus (sectional)',
-    durationSec: 15 * 60,
+    durationSec: 20 * 60,
   })
 }
 

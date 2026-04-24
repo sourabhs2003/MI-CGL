@@ -1,5 +1,7 @@
 :root {
   color-scheme: dark;
+  --top-nav-offset: 4.5rem;
+  --bottom-nav-offset: 7.5rem;
   --bg: #0B0F1A;
   --surface: #121826;
   --surface2: #1A2238;
@@ -84,11 +86,11 @@ textarea {
 .app-root {
   width: min(100%, 760px);
   margin: 0 auto;
-  padding: 1rem 0.95rem 1.5rem;
+  padding: 0 0.95rem var(--bottom-nav-offset);
 }
 
 .mobile-pad {
-  padding-bottom: 5.25rem;
+  padding-bottom: var(--bottom-nav-offset);
 }
 
 .top-bar,
@@ -1533,13 +1535,13 @@ h3 {
    ============================================ */
 
 .mock-entry-page {
-  min-height: 100vh;
-  padding-bottom: 6rem;
+  min-height: 100%;
+  padding-bottom: calc(var(--bottom-nav-offset) + 1rem);
 }
 
 .mock-sticky-header {
   position: sticky;
-  top: 0;
+  top: var(--top-nav-offset);
   z-index: 50;
   background: rgba(11, 15, 26, 0.95);
   backdrop-filter: blur(12px);
@@ -1876,11 +1878,9 @@ h3 {
 }
 
 .mock-form-actions {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 1rem;
+  position: sticky;
+  bottom: calc(var(--bottom-nav-offset) - 1rem);
+  padding-top: 1rem;
   background: linear-gradient(180deg, transparent, rgba(11, 15, 26, 0.98) 20%);
   z-index: 40;
 }
@@ -3146,7 +3146,7 @@ h3 {
 
 .member-drilldown-header {
   position: sticky;
-  top: 0;
+  top: var(--top-nav-offset);
   z-index: 10;
   display: flex;
   align-items: center;
@@ -6735,11 +6735,11 @@ body {
 
 .app-root {
   width: min(100%, 414px);
-  padding: 0.95rem 0.95rem 100px;
+  padding: 0 0.95rem var(--bottom-nav-offset);
 }
 
 .mobile-pad {
-  padding-bottom: 100px;
+  padding-bottom: var(--bottom-nav-offset);
 }
 
 .main-nav.bottom {
