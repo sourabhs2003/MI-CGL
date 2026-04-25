@@ -16,23 +16,26 @@ export function TasksPage() {
         <h1>Tasks</h1>
       </header>
 
-      {uid ? (
+      <div className="tasks-main">
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.22, ease: 'easeInOut' }}
         >
+          <TaskList myUid={uid} tasks={tasks} />
+        </motion.div>
+      </div>
+
+      {uid ? (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.22, ease: 'easeInOut', delay: 0.04 }}
+          className="tasks-side"
+        >
           <TaskForm myUid={uid} />
         </motion.div>
       ) : null}
-
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.22, ease: 'easeInOut', delay: 0.04 }}
-      >
-        <TaskList myUid={uid} tasks={tasks} />
-      </motion.div>
     </main>
   )
 }

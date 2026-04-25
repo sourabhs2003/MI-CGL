@@ -46,38 +46,44 @@ export function SquadPage() {
 
   return (
     <main className="squad-page-redesign squad-page-v3">
-      <SquadMission
-        title="Squad"
-        goalHours={squad.mission.goalHours}
-        currentHours={squad.mission.currentHours}
-        remainingHours={squad.mission.remainingHours}
-        activeMembers={squad.mission.activeMembers}
-        totalMembers={squad.mission.totalMembers}
-        contributors={squad.mission.contributors}
-      />
+      <div className="squad-desktop-shell">
+        <div className="squad-main-column">
+          <SquadMission
+            title="Squad"
+            goalHours={squad.mission.goalHours}
+            currentHours={squad.mission.currentHours}
+            remainingHours={squad.mission.remainingHours}
+            activeMembers={squad.mission.activeMembers}
+            totalMembers={squad.mission.totalMembers}
+            contributors={squad.mission.contributors}
+          />
 
-      <RiskAlertBar alerts={squad.alerts} />
+          <LiveActivityFeed activities={squad.activity} />
 
-      <LiveActivityFeed activities={squad.activity} />
+          <SquadLeaderboard
+            members={squad.leaderboard}
+            onSelectMember={setSelectedMemberUid}
+            onFreezeSelf={() => {
+              freeze()
+            }}
+            onUnfreezeSelf={unfreeze}
+          />
 
-      <SquadLeaderboard
-        members={squad.leaderboard}
-        onSelectMember={setSelectedMemberUid}
-        onFreezeSelf={() => {
-          freeze()
-        }}
-        onUnfreezeSelf={unfreeze}
-      />
+          <MonthlySquadReport members={squad.leaderboard} />
+        </div>
 
-      <SquadIntelligenceBlock
-        healthScore={squad.health.score}
-        healthLabel={squad.health.label}
-        weeklyTrend={squad.weeklyTrend}
-        leaderName={leaderName}
-        atRiskName={atRiskName}
-      />
+        <aside className="squad-side-column">
+          <RiskAlertBar alerts={squad.alerts} />
 
-      <MonthlySquadReport members={squad.leaderboard} />
+          <SquadIntelligenceBlock
+            healthScore={squad.health.score}
+            healthLabel={squad.health.label}
+            weeklyTrend={squad.weeklyTrend}
+            leaderName={leaderName}
+            atRiskName={atRiskName}
+          />
+        </aside>
+      </div>
 
       <MemberProfileDrillDown
         member={selectedMember}

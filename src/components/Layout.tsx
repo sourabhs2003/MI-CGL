@@ -25,6 +25,30 @@ export function Layout() {
           <span className="eyebrow"></span>
           <strong>MI  CGL</strong>
         </div>
+        
+        {/* Desktop Sidebar Navigation */}
+        <div className="nav-links desktop-links">
+          {links.map((link) => (
+            <NavLink
+              key={link.to}
+              to={link.to}
+              end={link.to === '/'}
+              className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
+            >
+              {({ isActive }) => (
+                <motion.div
+                  className="nav-link-content"
+                  whileTap={{ scale: 0.98 }}
+                  transition={{ type: 'spring', stiffness: 360, damping: 24 }}
+                >
+                  <link.icon size={18} className={isActive ? 'icon active' : 'icon'} />
+                  <span>{link.label}</span>
+                </motion.div>
+              )}
+            </NavLink>
+          ))}
+        </div>
+
         <div className="nav-user">
           <div className="nav-email avatar-inline" style={{ color: user?.avatarColor ?? identity.avatar.color }}>
             <AvatarIcon username={user?.username ?? identity.username} size={24} />

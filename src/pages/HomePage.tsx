@@ -35,13 +35,19 @@ export function HomePage() {
         </div>
       </motion.header>
 
-      {uid ? <PersonalStatus uid={uid} /> : null}
-      {uid ? <SquadCompetition /> : null}
-      {uid ? <TodayTaskHub uid={uid} /> : null}
-      {uid ? <SessionControls /> : null}
-      {uid ? <ActionCommand uid={uid} /> : null}
+      <div className="home-desktop-shell">
+        <div className="home-main-column">
+          {uid ? <PersonalStatus uid={uid} /> : null}
+          {uid ? <SquadCompetition /> : null}
+          {uid ? <TodayTaskHub uid={uid} /> : null}
+          {uid ? <SessionControls /> : null}
+        </div>
 
-      <Countdown />
+        <aside className="home-side-column">
+          {uid ? <ActionCommand uid={uid} /> : null}
+          <Countdown />
+        </aside>
+      </div>
     </main>
   )
 }

@@ -147,127 +147,133 @@ export function MocksPage() {
       </div>
 
       <div className="mock-entry-content">
-        <div className="mock-upload-card">
-          <div className="mock-upload-copy">
-            <p className="mock-upload-eyebrow">Auto-Fill</p>
-            <h2>Upload Screenshot</h2>
+        {/* Left Column: Input Form (70%) */}
+        <div className="mock-form-main">
+          <div className="mock-upload-card">
+            <div className="mock-upload-copy">
+              <p className="mock-upload-eyebrow">Auto-Fill</p>
+              <h2>Upload Screenshot</h2>
+            </div>
+
+            <div className="mock-upload-actions">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="mock-hidden-input"
+                onChange={handleScreenshotSelect}
+              />
+              <button type="button" className="mock-upload-btn" onClick={openFilePicker} disabled={!uid || screenshotBusy}>
+                {screenshotBusy ? <LoaderCircle size={18} className="spin" /> : <ImageUp size={18} />}
+                <span>{screenshotBusy ? 'Processing...' : 'Upload Screenshot'}</span>
+              </button>
+              {screenshotProgress ? <p className="mock-upload-status">{screenshotProgress}</p> : null}
+              {screenshotError ? <p className="mock-form-error">{screenshotError}</p> : null}
+            </div>
           </div>
 
-          <div className="mock-upload-actions">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="mock-hidden-input"
-              onChange={handleScreenshotSelect}
-            />
-            <button type="button" className="mock-upload-btn" onClick={openFilePicker} disabled={!uid || screenshotBusy}>
-              {screenshotBusy ? <LoaderCircle size={18} className="spin" /> : <ImageUp size={18} />}
-              <span>{screenshotBusy ? 'Processing...' : 'Upload Screenshot'}</span>
-            </button>
-            {screenshotProgress ? <p className="mock-upload-status">{screenshotProgress}</p> : null}
-            {screenshotError ? <p className="mock-form-error">{screenshotError}</p> : null}
-          </div>
-        </div>
+          {reviewDraft ? (
+            <div className="mock-form-container">
+              <MockScreenshotReview
+                initialDraft={reviewDraft}
+                busy={busy || !uid}
+                onCancel={resetReview}
+                onConfirm={handleScreenshotConfirm}
+              />
+            </div>
+          ) : null}
 
-        {reviewDraft ? (
-          <div className="mock-form-container">
-            <MockScreenshotReview
-              initialDraft={reviewDraft}
-              busy={busy || !uid}
-              onCancel={resetReview}
-              onConfirm={handleScreenshotConfirm}
-            />
-          </div>
-        ) : null}
-
-        <div className="mock-entry-toggle">
-          <button
-            type="button"
-            className={`mock-toggle-btn ${entryType === 'full' ? 'active' : ''}`}
-            onClick={() => setEntryType('full')}
-          >
-            Full Mock
-          </button>
-          <button
-            type="button"
-            className={`mock-toggle-btn ${entryType === 'sectional' ? 'active' : ''}`}
-            onClick={() => setEntryType('sectional')}
-          >
-            Sectional
-          </button>
-        </div>
-
-        {!reviewDraft ? (
-          <div className="mock-form-container">
-            {entryType === 'full' ? (
-              <FullMockForm busy={busy || !uid} onSubmit={handleFullSubmit} />
-            ) : (
-              <SectionalMockForm busy={busy || !uid} onSubmit={handleSectionalSubmit} />
-            )}
-          </div>
-        ) : null}
-
-        {error ? <p className="mock-form-error">{error}</p> : null}
-
-        <div className="mock-history-section">
-          <button
-            type="button"
-            className="mock-history-toggle"
-            onClick={() => setShowHistory((current) => !current)}
-          >
-            <span>History ({mocks.length})</span>
-            {showHistory ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-          </button>
-
-          {showHistory ? (
-            <div className="mock-history-list">
-              {mocks.length === 0 ? (
-                <p className="mock-history-empty">No mocks logged.</p>
+          {!reviewDraft ? (
+            <div className="mock-form-container">
+              {entryType === 'full' ? (
+                <FullMockForm busy={busy || !uid} onSubmit={handleFullSubmit} />
               ) : (
-                mocks.map((mock) => (
-                  <div key={mock.id} className="mock-history-item">
-                    <div className="mock-history-main">
-                      <span className="mock-history-type">{mock.type === 'full' ? 'Full' : 'Sectional'}</span>
-                      <span className="mock-history-info">
-                        {mock.type === 'full'
-                          ? mock.exam.replace('SSC CGL ', '')
-                          : mock.subject === 'Maths'
-                            ? 'Quant'
-                            : mock.subject === 'GS'
-                              ? 'GA'
-                              : mock.subject}
-                      </span>
-                    </div>
-
-                    <div className="mock-history-stats">
-                      <span>
-                        {mock.overall.score}/{mock.overall.total}
-                      </span>
-                      <span>{mock.overall.attempted} att</span>
-                      <span>{mock.overall.accuracy}% acc</span>
-                      <span>{mock.overall.time}m</span>
-                    </div>
-
-                    <div className="mock-history-meta">
-                      <span className="mock-history-date">
-                        {toMillis(mock.createdAt)
-                          ? new Date(toMillis(mock.createdAt)).toLocaleDateString()
-                          : '-'}
-                      </span>
-                      <button
-                        type="button"
-                        className="mock-history-delete"
-                        onClick={() => uid && void deleteMock(uid, mock.id)}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                ))
+                <SectionalMockForm busy={busy || !uid} onSubmit={handleSectionalSubmit} />
               )}
             </div>
           ) : null}
+
+          {error ? <p className="mock-form-error">{error}</p> : null}
+        </div>
+
+        {/* Right Column: History + Mode Toggle (30%) */}
+        <div className="mock-sidebar">
+          <div className="mock-entry-toggle">
+            <button
+              type="button"
+              className={`mock-toggle-btn ${entryType === 'full' ? 'active' : ''}`}
+              onClick={() => setEntryType('full')}
+            >
+              Full Mock
+            </button>
+            <button
+              type="button"
+              className={`mock-toggle-btn ${entryType === 'sectional' ? 'active' : ''}`}
+              onClick={() => setEntryType('sectional')}
+            >
+              Sectional
+            </button>
+          </div>
+
+          <div className="mock-history-section">
+            <button
+              type="button"
+              className="mock-history-toggle"
+              onClick={() => setShowHistory((current) => !current)}
+            >
+              <span>History ({mocks.length})</span>
+              {showHistory ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+            </button>
+
+            {showHistory ? (
+              <div className="mock-history-list">
+                {mocks.length === 0 ? (
+                  <p className="mock-history-empty">No mocks logged.</p>
+                ) : (
+                  mocks.map((mock) => (
+                    <div key={mock.id} className="mock-history-item">
+                      <div className="mock-history-main">
+                        <span className="mock-history-type">{mock.type === 'full' ? 'Full' : 'Sectional'}</span>
+                        <span className="mock-history-info">
+                          {mock.type === 'full'
+                            ? mock.exam.replace('SSC CGL ', '')
+                            : mock.subject === 'Maths'
+                              ? 'Quant'
+                              : mock.subject === 'GS'
+                                ? 'GA'
+                                : mock.subject}
+                        </span>
+                      </div>
+
+                      <div className="mock-history-stats">
+                        <span>
+                          {mock.overall.score}/{mock.overall.total}
+                        </span>
+                        <span>{mock.overall.attempted} att</span>
+                        <span>{mock.overall.accuracy}% acc</span>
+                        <span>{mock.overall.time}m</span>
+                      </div>
+
+                      <div className="mock-history-meta">
+                        <span className="mock-history-date">
+                          {toMillis(mock.createdAt)
+                            ? new Date(toMillis(mock.createdAt)).toLocaleDateString()
+                            : '-'}
+                        </span>
+                        <button
+                          type="button"
+                          className="mock-history-delete"
+                          onClick={() => uid && void deleteMock(uid, mock.id)}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
     </main>

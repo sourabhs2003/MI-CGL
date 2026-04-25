@@ -54,20 +54,39 @@ export function DashboardPage() {
   }, [])
 
   return (
-    <main className="mobile-analytics">
+    <main className="dashboard-grid">
       <MobileHeader />
-      <MetricsStrip sessions={sessions} mocks={mocks} />
-      <GraphHub sessions={sessions} />
-      <CompactInsight sessions={sessions} />
-      <FocusPriority sessions={sessions} mocks={mocks} />
-      <TimePattern sessions={sessions} />
-      <SessionHistory sessions={sessions} />
-      <CollapsiblePlan sessions={sessions} />
-      <div ref={mockRef}>
-        {showMockAnalytics && <SwipeMockAnalytics mocks={mocks} />}
-      </div>
-      <div ref={heatmapRef}>
-        {showHeatmap && <MinimizedHeatmap sessions={sessions} />}
+
+      <div className="dashboard-shell">
+        <div className="dashboard-main">
+          <div className="dashboard-row-1">
+            <MetricsStrip sessions={sessions} mocks={mocks} />
+          </div>
+
+          <div className="dashboard-row-2">
+            <GraphHub sessions={sessions} />
+            <div className="analytics-insight-card card">
+              <CompactInsight sessions={sessions} />
+            </div>
+          </div>
+
+          <div className="dashboard-row-3">
+            <FocusPriority sessions={sessions} mocks={mocks} />
+          </div>
+
+          <div className="dashboard-row-4">
+            <TimePattern sessions={sessions} />
+            <SessionHistory sessions={sessions} />
+          </div>
+
+          <CollapsiblePlan sessions={sessions} />
+          <div ref={mockRef}>
+            {showMockAnalytics && <SwipeMockAnalytics mocks={mocks} />}
+          </div>
+          <div ref={heatmapRef}>
+            {showHeatmap && <MinimizedHeatmap sessions={sessions} />}
+          </div>
+        </div>
       </div>
     </main>
   )

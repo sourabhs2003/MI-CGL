@@ -383,6 +383,11 @@ h3 {
   gap: 0.75rem;
 }
 
+/* Desktop sidebar links - hidden on mobile */
+.desktop-links {
+  display: none;
+}
+
 .rank-badge {
   grid-template-columns: auto 1fr auto;
   align-items: center;
@@ -1168,6 +1173,20 @@ h3 {
 .tasks-stack {
   display: grid;
   gap: 1.25rem;
+}
+
+.home-desktop-shell,
+.home-main-column,
+.home-side-column,
+.dashboard-shell,
+.dashboard-main,
+.tasks-main,
+.tasks-side,
+.squad-desktop-shell,
+.squad-main-column,
+.squad-side-column {
+  display: grid;
+  gap: 1rem;
 }
 
 .task-form-card,
@@ -11780,5 +11799,563 @@ body {
 
   .squad-row-main {
     grid-template-columns: auto auto minmax(0, 1fr) auto;
+  }
+}
+
+@media (max-width: 1023px) {
+  .tasks-side {
+    order: -1;
+  }
+
+  .tasks-main {
+    order: 0;
+  }
+
+  .dashboard-grid,
+  .dashboard-main {
+    gap: 0.9rem;
+  }
+
+  .dashboard-row-2,
+  .dashboard-row-4 {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.9rem;
+  }
+
+  .graph-hub,
+  .compact-insight {
+    margin: 0;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .graph-tabs {
+    width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .graph-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .graph-tab {
+    flex: 1 0 auto;
+    white-space: nowrap;
+  }
+
+  .graph-card {
+    padding: 0.7rem;
+  }
+
+  .chart-panel,
+  .chart-panel.compact {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .chart-panel .recharts-wrapper,
+  .chart-panel.compact .recharts-wrapper {
+    min-width: 0;
+  }
+
+  .analytics-insight-card {
+    padding: 0.85rem;
+  }
+
+  .insight-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .insight-cta {
+    display: none;
+  }
+}
+
+/* ============================================
+   DESKTOP LAYOUT (min-width: 1024px)
+   ============================================ */
+
+@media (min-width: 1024px) {
+  .app-root {
+    width: min(100%, 1400px);
+    margin: 0 auto;
+    padding: 1.75rem clamp(1.25rem, 2vw, 2.25rem) 3.5rem;
+  }
+
+  .app-root > * {
+    min-width: 0;
+  }
+
+  .shell {
+    display: grid;
+    grid-template-columns: minmax(244px, 272px) minmax(0, 1fr);
+    min-height: 100vh;
+    align-items: stretch;
+  }
+
+  .main-nav.top {
+    position: sticky;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    flex-direction: column;
+    align-items: stretch;
+    padding: 1.5rem 1.25rem;
+    border-right: 1px solid var(--border);
+    border-bottom: none;
+    background: linear-gradient(180deg, rgba(11, 15, 26, 0.98), rgba(8, 12, 18, 0.98));
+    z-index: 100;
+    overflow-y: auto;
+  }
+
+  .nav-brand {
+    margin-bottom: 2rem;
+  }
+
+  .nav-brand strong {
+    font-size: 1.25rem;
+  }
+
+  .desktop-links {
+    display: grid;
+    gap: 0.5rem;
+    flex: 1;
+  }
+
+  .desktop-links .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-radius: 12px;
+    text-decoration: none;
+    color: var(--muted);
+    transition: all 0.2s ease;
+  }
+
+  .desktop-links .nav-link:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text);
+  }
+
+  .desktop-links .nav-link.active {
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.16), rgba(56, 189, 248, 0.08));
+    color: var(--text);
+    border: 1px solid rgba(34, 197, 94, 0.2);
+  }
+
+  .desktop-links .nav-link-content {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .desktop-links .nav-link span {
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+
+  .nav-user {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1rem;
+    margin-top: auto;
+    padding-top: 1.5rem;
+    border-top: 1px solid rgba(148, 163, 184, 0.1);
+  }
+
+  .nav-email.avatar-inline {
+    justify-content: flex-start;
+  }
+
+  .nav-logout {
+    width: 100%;
+  }
+
+  .main-nav.bottom {
+    display: none;
+  }
+
+  .mobile-pad {
+    padding-bottom: 0;
+    padding-top: 0;
+  }
+
+  h1 {
+    font-size: clamp(2rem, 3vw, 2.75rem);
+  }
+
+  h2 {
+    font-size: 1.25rem;
+  }
+
+  h3 {
+    font-size: 1.05rem;
+  }
+
+  .muted,
+  .card-sub {
+    font-size: 0.95rem;
+  }
+
+  .tiny {
+    font-size: 0.8rem;
+  }
+
+  .page-head.compact,
+  .home-hero,
+  .mobile-header {
+    grid-column: 1 / -1;
+  }
+
+  .mobile-header {
+    padding: 0.9rem 1.15rem;
+    border-radius: 22px;
+  }
+
+  .home-desktop-shell,
+  .dashboard-shell,
+  .squad-desktop-shell,
+  .tasks-stack,
+  .mock-entry-content {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 1.5rem;
+    align-items: start;
+  }
+
+  .home-main-column,
+  .dashboard-main,
+  .squad-main-column,
+  .tasks-main,
+  .mock-form-main {
+    gap: 1.5rem;
+  }
+
+  .home-side-column,
+  .squad-side-column,
+  .tasks-side,
+  .mock-sidebar {
+    gap: 1.25rem;
+  }
+
+  .home-section {
+    margin-bottom: 0;
+  }
+
+  .stat-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 24px;
+  }
+
+  .action-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .summary-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .stat-kpis {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .field-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24px;
+  }
+
+  .quick-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .card,
+  .xp-block,
+  .sectional-card,
+  .task-item,
+  .leaderboard-row,
+  .stat-card {
+    padding: 20px;
+    border-radius: 20px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  }
+
+  .card:hover,
+  .xp-block:hover,
+  .task-item:hover,
+  .leaderboard-row:hover,
+  .stat-card:hover {
+    transform: translateY(-3px);
+    border-color: var(--border-strong);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.05),
+      0 16px 34px rgba(0, 0, 0, 0.28),
+      0 0 20px rgba(0, 230, 168, 0.1);
+  }
+
+  .home-side-column > *,
+  .squad-side-column > * {
+    min-width: 0;
+  }
+
+  .task-form-card,
+  .mock-sidebar,
+  .analytics-insight-card,
+  .home-side-column,
+  .squad-side-column {
+    position: sticky;
+    top: 24px;
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
+  }
+
+  .page-head.compact {
+    margin-bottom: 0.25rem;
+  }
+
+  .tasks-stack {
+    grid-template-columns: minmax(0, 1fr) 340px;
+  }
+
+  .tasks-main,
+  .tasks-side {
+    min-width: 0;
+  }
+
+  .task-list-card {
+    min-height: 400px;
+  }
+
+  .task-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .mock-sidebar {
+    padding-top: 0.1rem;
+  }
+
+  .mock-form-container {
+    display: grid;
+    gap: 24px;
+  }
+
+  .mock-accordion-item {
+    border-radius: 16px;
+  }
+
+  .mock-form-actions {
+    position: static;
+    padding-top: 24px;
+    background: none;
+  }
+
+  .mock-save-btn {
+    width: auto;
+    padding: 0.9rem 2.5rem;
+  }
+
+  .dashboard-grid {
+    display: grid;
+    gap: 1.5rem;
+  }
+
+  .dashboard-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dashboard-row-1 .metrics-scroll {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px;
+    padding: 0;
+    overflow: visible;
+  }
+
+  .dashboard-row-2 {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 1.5rem;
+    align-items: start;
+  }
+
+  .dashboard-row-3 {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+
+  .priority-list {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .dashboard-row-4 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+
+  .leaderboard-scroll {
+    max-height: 28rem;
+  }
+
+  .chart-panel {
+    min-width: 0;
+    min-height: 20rem;
+  }
+
+  .btn {
+    padding: 0.9rem 1.25rem;
+    font-size: 0.95rem;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+  }
+
+  .btn.sm {
+    padding: 0.65rem 0.9rem;
+    font-size: 0.9rem;
+  }
+
+  .field input,
+  .field select,
+  .date-input {
+    padding: 0.9rem 1rem;
+    font-size: 0.95rem;
+  }
+
+  .top-bar {
+    margin-bottom: 24px;
+  }
+
+  .actions-card,
+  .leaderboard-card,
+  .mission-card,
+  .rival-card,
+  .ai-coach-card,
+  .countdown-card,
+  .insights-block,
+  .badges-card {
+    margin-bottom: 24px;
+  }
+
+  .home-v2,
+  .squad-page-v3 {
+    gap: 1.5rem;
+  }
+
+  .home-desktop-shell {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+
+  .squad-desktop-shell {
+    grid-template-columns: minmax(0, 1fr) 340px;
+  }
+
+  .squad-card-head,
+  .squad-progress-hero,
+  .squad-mission-meta,
+  .squad-health-meta,
+  .squad-top-row,
+  .squad-top-stats,
+  .squad-sheet-head {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .squad-member-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .squad-secondary-grid,
+  .squad-sheet-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .squad-sheet-grid > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+  .premium-action:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+  }
+
+  .subject-chip:hover {
+    transform: translateY(-1px);
+  }
+
+  .analytics-tabs {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .analytics-tab {
+    font-size: 0.85rem;
+    padding: 0.65rem 0.5rem;
+  }
+}
+
+@media (min-width: 1600px) {
+  .app-root {
+    width: min(100%, 1480px);
+    padding: 2rem 2.75rem 4rem;
+  }
+
+  .shell {
+    grid-template-columns: 280px 1fr;
+    background: radial-gradient(circle at right center, rgba(34, 197, 94, 0.03), transparent 60%);
+  }
+
+  .main-nav.top {
+    padding: 2rem 1.5rem;
+  }
+
+  .home-desktop-shell,
+  .mock-entry-content {
+    grid-template-columns: minmax(0, 1fr) 360px;
+    gap: 32px;
+  }
+
+  .tasks-stack,
+  .squad-desktop-shell {
+    grid-template-columns: minmax(0, 1fr) 380px;
+    gap: 32px;
+  }
+
+  .card,
+  .xp-block,
+  .sectional-card,
+  .task-item,
+  .leaderboard-row,
+  .stat-card {
+    padding: 24px;
+  }
+
+  h1 {
+    font-size: clamp(2.25rem, 3vw, 3rem);
+  }
+
+  .dashboard-row-1 .metrics-scroll {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+
+  .dashboard-row-2 {
+    grid-template-columns: minmax(0, 1fr) 360px;
+  }
+
+  .dashboard-row-2,
+  .dashboard-row-4 {
+    gap: 32px;
   }
 }
