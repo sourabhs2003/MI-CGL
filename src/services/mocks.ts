@@ -13,6 +13,7 @@ import { getDb } from '../firebase'
 import { todayKey } from '../lib/dates'
 import { XP_MOCK_DONE } from '../lib/xp'
 import { currentMonthKey, isFrozenProfile } from '../lib/activityStatus'
+import { prepareFirestoreData } from '../lib/firestoreSanitize'
 import { saveStudySession } from './studySession'
 import type { FullExamType, FullMockDoc, FullMockSection, MockDoc, MockOverall, SectionName, SectionalMockDoc } from '../types'
 
@@ -20,6 +21,10 @@ type FullMockInput = Omit<FullMockDoc, 'id' | 'createdAt' | 'type' | 'label' | '
 type SectionalMockInput = Omit<SectionalMockDoc, 'id' | 'createdAt' | 'type' | 'label' | 'dayKey' | 'schemaVersion' | 'source'>
 
 const fixedSections: SectionName[] = ['Reasoning', 'GA', 'Maths', 'English']
+
+function durationFromMockTime(overall: MockOverall): number {
+  return Math.round(Math.max(0, overall.time) * 60)
+}
 
 function sanitizeOverall(input: unknown, fallbackTotal: number): MockOverall {
   const raw = (input ?? {}) as Record<string, unknown>
@@ -30,12 +35,12 @@ function sanitizeOverall(input: unknown, fallbackTotal: number): MockOverall {
     accuracy: Math.max(0, Math.min(100, Number(raw.accuracy) || 0)),
     time: Math.max(0, Number(raw.time) || 0),
     percentile:
-      raw.percentile == null ? undefined : Math.max(0, Math.min(100, Number(raw.percentile) || 0)),
-    rank: raw.rank == null ? undefined : Math.max(0, Number(raw.rank) || 0),
-    rankTotal: raw.rankTotal == null ? undefined : Math.max(0, Number(raw.rankTotal) || 0),
-    correct: raw.correct == null ? undefined : Math.max(0, Number(raw.correct) || 0),
-    incorrect: raw.incorrect == null ? undefined : Math.max(0, Number(raw.incorrect) || 0),
-    unattempted: raw.unattempted == null ? undefined : Math.max(0, Number(raw.unattempted) || 0),
+      raw.percentile == null ? 0 : Math.max(0, Math.min(100, Number(raw.percentile) || 0)),
+    rank: raw.rank == null ? 0 : Math.max(0, Number(raw.rank) || 0),
+    rankTotal: raw.rankTotal == null ? 0 : Math.max(0, Number(raw.rankTotal) || 0),
+    correct: raw.correct == null ? 0 : Math.max(0, Number(raw.correct) || 0),
+    incorrect: raw.incorrect == null ? 0 : Math.max(0, Number(raw.incorrect) || 0),
+    unattempted: raw.unattempted == null ? 0 : Math.max(0, Number(raw.unattempted) || 0),
   }
 }
 
@@ -86,7 +91,7 @@ function normalizeLegacyOrCurrentMock(id: string, input: Record<string, unknown>
     return {
       id,
       type: 'sectional',
-      label: String(input.label ?? `Sectional Mock • ${String(input.subject ?? 'Maths')}`),
+      label: String(input.label ?? `Sectional Mock - ${String(input.subject ?? 'Maths')}`),
       subject: (input.subject as SectionalMockDoc['subject']) ?? 'Maths',
       overall: sanitizeOverall(input.overall, 50),
       source,
@@ -101,7 +106,7 @@ function normalizeLegacyOrCurrentMock(id: string, input: Record<string, unknown>
     return {
       id,
       type: 'sectional',
-      label: String(input.label ?? `Sectional Mock • ${String(input.subject ?? 'Maths')}`),
+      label: String(input.label ?? `Sectional Mock - ${String(input.subject ?? 'Maths')}`),
       subject: ((input.subject as SectionalMockDoc['subject']) ?? 'Maths'),
       overall: {
         score: Math.max(0, Number(input.score) || 0),
@@ -109,7 +114,12 @@ function normalizeLegacyOrCurrentMock(id: string, input: Record<string, unknown>
         attempted: Math.max(0, Number(input.attempted) || 0),
         accuracy: Math.max(0, Math.min(100, Number(input.accuracyPct) || 0)),
         time: Math.max(0, Number(input.durationMin) || 0),
-        percentile: input.percentile == null ? undefined : Math.max(0, Math.min(100, Number(input.percentile) || 0)),
+        percentile: input.percentile == null ? 0 : Math.max(0, Math.min(100, Number(input.percentile) || 0)),
+        rank: 0,
+        rankTotal: 0,
+        correct: 0,
+        incorrect: 0,
+        unattempted: 0,
       },
       source,
       dayKey,
@@ -155,7 +165,12 @@ function normalizeLegacyOrCurrentMock(id: string, input: Record<string, unknown>
       attempted: Math.max(0, Number(input.attempted) || 0),
       accuracy: Math.max(0, Math.min(100, Number(input.accuracyPct) || 0)),
       time: Math.max(0, Number(input.durationMin) || 0),
-      percentile: input.percentile == null ? undefined : Math.max(0, Math.min(100, Number(input.percentile) || 0)),
+      percentile: input.percentile == null ? 0 : Math.max(0, Math.min(100, Number(input.percentile) || 0)),
+      rank: 0,
+      rankTotal: 0,
+      correct: 0,
+      incorrect: 0,
+      unattempted: 0,
     },
     sections: fixedSections.map((name) => sectionMap.get(name) ?? sanitizeFullSection({}, name)),
     source,
@@ -181,11 +196,12 @@ export function subscribeMocks(uid: string, cb: (rows: MockDoc[]) => void) {
 }
 
 export async function addFullMock(uid: string, input: FullMockInput, source: 'manual' | 'ocr' = 'manual'): Promise<void> {
+  const overall = sanitizeOverall(input.overall, 200)
   const payload: Omit<FullMockDoc, 'id' | 'createdAt'> = {
     type: 'full',
     label: `Full Mock (${input.exam === 'SSC CGL Tier 2' ? 'T2' : 'T1'})`,
     exam: input.exam,
-    overall: sanitizeOverall(input.overall, 200),
+    overall,
     sections: fixedSections.map((name, index) => sanitizeFullSection(input.sections[index], name)),
     source,
     dayKey: todayKey(),
@@ -196,16 +212,17 @@ export async function addFullMock(uid: string, input: FullMockInput, source: 'ma
   await saveStudySession(uid, {
     subject: 'Mixed',
     topic: `Mock bonus (${input.exam === 'SSC CGL Tier 2' ? 'full_t2' : 'full_t1'})`,
-    durationSec: (input.exam === 'SSC CGL Tier 2' ? 120 : 60) * 60,
+    durationSec: durationFromMockTime(overall),
   })
 }
 
 export async function addSectionalMock(uid: string, input: SectionalMockInput, source: 'manual' | 'ocr' = 'manual'): Promise<void> {
+  const overall = sanitizeOverall(input.overall, 50)
   const payload: Omit<SectionalMockDoc, 'id' | 'createdAt'> = {
     type: 'sectional',
-    label: `Sectional Mock • ${input.subject}`,
+    label: `Sectional Mock - ${input.subject}`,
     subject: input.subject,
-    overall: sanitizeOverall(input.overall, 50),
+    overall,
     source,
     dayKey: todayKey(),
     schemaVersion: 2,
@@ -215,7 +232,7 @@ export async function addSectionalMock(uid: string, input: SectionalMockInput, s
   await saveStudySession(uid, {
     subject: input.subject,
     topic: 'Mock bonus (sectional)',
-    durationSec: 20 * 60,
+    durationSec: durationFromMockTime(overall),
   })
 }
 
@@ -230,20 +247,20 @@ async function saveMock(uid: string, payload: Omit<MockDoc, 'id' | 'createdAt'>)
     const currentMonthlyXp = prev.xpMonth === monthKey ? Number(prev.xp) || 0 : 0
     const earnedXp = wasFrozen ? 0 : XP_MOCK_DONE
     const mockRef = doc(collection(db, `users/${uid}/mocks`))
-    tx.set(mockRef, {
+    tx.set(mockRef, prepareFirestoreData({
       ...payload,
       createdAt: serverTimestamp(),
-    })
+    }))
     tx.set(
       userRef,
-      {
+      prepareFirestoreData({
         xp: currentMonthlyXp + earnedXp,
         lifetimeXp: increment(earnedXp),
         xpMonth: monthKey,
         isFrozen: false,
         frozenAt: null,
         comebackAt: wasFrozen ? serverTimestamp() : (prev.comebackAt ?? null),
-      },
+      }),
       { merge: true },
     )
   })
@@ -276,11 +293,11 @@ export function getDefaultFullOverall(exam: FullExamType = 'SSC CGL Tier 1'): Mo
     accuracy: 0,
     time: 0,
     percentile: 0,
-    rank: undefined,
-    rankTotal: undefined,
-    correct: undefined,
-    incorrect: undefined,
-    unattempted: undefined,
+    rank: 0,
+    rankTotal: 0,
+    correct: 0,
+    incorrect: 0,
+    unattempted: 0,
   }
 }
 
@@ -292,10 +309,10 @@ export function getDefaultSectionalOverall(): MockOverall {
     accuracy: 0,
     time: 0,
     percentile: 0,
-    rank: undefined,
-    rankTotal: undefined,
-    correct: undefined,
-    incorrect: undefined,
-    unattempted: undefined,
+    rank: 0,
+    rankTotal: 0,
+    correct: 0,
+    incorrect: 0,
+    unattempted: 0,
   }
 }

@@ -46,6 +46,15 @@ function gapLabel(member: SquadMemberCard, ranked: SquadMemberCard[]) {
   return `-${above.xp - member.xp} XP from #${above.rank}`
 }
 
+function getWeeklyResetLabel() {
+  const now = new Date()
+  const daysUntilMonday = (8 - now.getDay()) % 7 || 7
+  const reset = new Date(now)
+  reset.setDate(now.getDate() + daysUntilMonday)
+  reset.setHours(0, 0, 0, 0)
+  return new Intl.DateTimeFormat('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }).format(reset)
+}
+
 export function SquadLeaderboard(props: SquadLeaderboardProps) {
   const { members, onSelectMember, onFreezeSelf, onUnfreezeSelf } = props
   const ranked = useMemo(() => members.filter((member) => !member.frozen), [members])
@@ -77,7 +86,7 @@ export function SquadLeaderboard(props: SquadLeaderboardProps) {
       <section className="squad-shell squad-board-compact">
         <div className="squad-section-head">
           <strong>Leaderboard</strong>
-          <span>{members.length} members</span>
+          <span>{members.length} members - weekly reset {getWeeklyResetLabel()}</span>
         </div>
 
         <div className="squad-list-compact">

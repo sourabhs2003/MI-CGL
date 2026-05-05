@@ -20,7 +20,42 @@ export interface UserProfile {
   displayName?: string
   avatarIcon?: string
   avatarColor?: string
+  currentSessionId?: string | null
+  notificationSettings?: NotificationSettings
+  notificationStats?: NotificationStats
   createdAt?: unknown
+}
+
+export interface NotificationSettings {
+  enabled: boolean
+  squadAlerts: boolean
+  motivationAlerts: boolean
+}
+
+export interface NotificationStats {
+  dayKey?: string
+  sentToday?: number
+  lastByType?: Record<string, unknown>
+}
+
+export type NotificationType =
+  | 'squad_session_started'
+  | 'motivation_no_study_today'
+  | 'motivation_low_consistency'
+  | 'motivation_falling_performance'
+  | 'motivation_missed_target'
+
+export interface AppNotificationDoc {
+  id: string
+  type: NotificationType
+  title: string
+  body: string
+  read: boolean
+  createdAt: unknown
+  senderId?: string | null
+  senderName?: string | null
+  actionUrl?: string | null
+  dayKey?: string
 }
 
 export type TimeOfDay = 'morning' | 'afternoon' | 'evening' | 'night'

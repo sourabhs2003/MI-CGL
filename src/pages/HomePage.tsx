@@ -9,18 +9,30 @@ import { SessionControls } from '../components/SessionControls'
 import { SquadCompetition } from '../components/SquadCompetition'
 import { TodayTaskHub } from '../components/TodayTaskHub'
 import { useAuth } from '../context/AuthContext'
+import { useMocks, useTasks } from '../hooks/useFirestoreData'
+import { useMotivationNotifications } from '../hooks/useNotifications'
+import { useUserProfile } from '../hooks/useUserProfile'
 import { getIdentity } from '../lib/identity'
 import { syncQueuedStudySessions } from '../services/studySession'
+
+const sectionVariants = {
+  hidden: { opacity: 0, y: 16 },
+  visible: { opacity: 1, y: 0 },
+}
 
 export function HomePage() {
   const { user } = useAuth()
   const uid = user?.uid
+  const { profile } = useUserProfile(uid)
+  const tasks = useTasks(uid)
+  const mocks = useMocks(uid)
 
   useEffect(() => {
     void syncQueuedStudySessions()
   }, [])
 
   const userIdentity = getIdentity(user?.username ?? 'user')
+  useMotivationNotifications(uid, profile, tasks, mocks)
 
   return (
     <main className="home-v2">
@@ -36,17 +48,27 @@ export function HomePage() {
       </motion.header>
 
       <div className="home-desktop-shell">
-        <div className="home-main-column">
-          {uid ? <PersonalStatus uid={uid} /> : null}
-          {uid ? <SquadCompetition /> : null}
-          {uid ? <TodayTaskHub uid={uid} /> : null}
-          {uid ? <SessionControls /> : null}
-        </div>
+        <motion.div
+          className="home-main-column"
+          initial="hidden"
+          animate="visible"
+          variants={{ visible: { transition: { staggerChildren: 0.07, delayChildren: 0.08 } } }}
+        >
+          {uid ? <motion.div variants={sectionVariants} transition={{ duration: 0.24 }}><PersonalStatus uid={uid} /></motion.div> : null}
+          {uid ? <motion.div variants={sectionVariants} transition={{ duration: 0.24 }}><SquadCompetition /></motion.div> : null}
+          {uid ? <motion.div variants={sectionVariants} transition={{ duration: 0.24 }}><TodayTaskHub uid={uid} /></motion.div> : null}
+          {uid ? <motion.div variants={sectionVariants} transition={{ duration: 0.24 }}><SessionControls /></motion.div> : null}
+        </motion.div>
 
-        <aside className="home-side-column">
-          {uid ? <ActionCommand uid={uid} /> : null}
-          <Countdown />
-        </aside>
+        <motion.aside
+          className="home-side-column"
+          initial="hidden"
+          animate="visible"
+          variants={{ visible: { transition: { staggerChildren: 0.08, delayChildren: 0.14 } } }}
+        >
+          {uid ? <motion.div className="home-primary-cta" variants={sectionVariants} transition={{ duration: 0.24 }}><ActionCommand uid={uid} /></motion.div> : null}
+          <motion.div variants={sectionVariants} transition={{ duration: 0.24 }}><Countdown /></motion.div>
+        </motion.aside>
       </div>
     </main>
   )

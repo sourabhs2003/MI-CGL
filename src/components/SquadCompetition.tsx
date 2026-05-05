@@ -1,3 +1,4 @@
+import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useMemo, useState } from 'react'
 import { AvatarIcon } from './AvatarIcon'
 import { useActiveSessions } from '../hooks/useActiveSessions'
@@ -74,8 +75,13 @@ export function SquadCompetition() {
         <h2>Squad Competition</h2>
       </div>
 
-      <div className="squad-members-grid">
-        {displayMembers.map((user) => {
+      <motion.div
+        className="squad-members-grid"
+        initial="hidden"
+        animate="visible"
+        variants={{ visible: { transition: { staggerChildren: 0.055 } } }}
+      >
+        {displayMembers.map((user, index) => {
           const { status, session } = getMemberStatus(user.uid, activeSessions)
           const isExpanded = expandedUser === user.uid
           const tag = getSquadTag(user.displayTodayHours, targetHours)
@@ -85,10 +91,18 @@ export function SquadCompetition() {
           const statusLabel = getStatusLabel(isInactive ? 'inactive' : status, session?.subject)
 
           return (
-            <div
+            <motion.div
               key={user.uid}
               className={`squad-member-card ${isExpanded ? 'expanded' : ''} ${user.uid === myUid ? 'me' : ''} ${status === 'studying' ? 'studying-glow' : ''} ${rank === 1 ? 'top-performer' : ''} ${isLastVisible ? 'last-place' : ''} ${isInactive ? 'inactive-member' : ''}`}
               onClick={() => setExpandedUser(isExpanded ? null : user.uid)}
+              variants={{
+                hidden: { opacity: 0, y: 10, scale: 0.985 },
+                visible: { opacity: 1, y: 0, scale: 1 },
+              }}
+              transition={{ duration: 0.22, delay: index * 0.015, ease: 'easeOut' }}
+              whileHover={{ y: -3 }}
+              whileTap={{ scale: 0.985 }}
+              layout
             >
               <div className="squad-member-main">
                 <AvatarIcon username={user.username} size={32} />
@@ -100,36 +114,51 @@ export function SquadCompetition() {
                 <span className={`rank-badge rank-${rank}`}>#{rank}</span>
               </div>
 
-              {isExpanded ? (
-                <div className="squad-member-details">
-                  <div className="squad-subject-inline">
-                    {Object.entries(user.todaySubjects).length > 0 ? (
-                      Object.entries(user.todaySubjects).map(([subject, hours]) => (
-                        <span key={subject} className="squad-subject-time">
-                          <span>{subject}</span>
-                          <strong>{hours.toFixed(1)}h</strong>
-                        </span>
-                      ))
-                    ) : (
-                      <p className="muted squad-no-subjects">No subject time logged today.</p>
-                    )}
-                  </div>
-                  <div className="squad-expanded-status">
-                    <span>{statusLabel}</span>
-                    {status === 'studying' && session ? <strong>{Math.floor((now - session.startTime) / 60000)}m</strong> : null}
-                  </div>
-                  <div className="squad-member-subjects">
-                    <span className="detail-label">Momentum</span>
-                    <span className={`detail-value ai-tag ${tag.className}`}>{tag.text}</span>
-                  </div>
-                </div>
-              ) : null}
-            </div>
+              <AnimatePresence initial={false}>
+                {isExpanded ? (
+                  <motion.div
+                    className="squad-member-details"
+                    initial={{ opacity: 0, height: 0, y: -6 }}
+                    animate={{ opacity: 1, height: 'auto', y: 0 }}
+                    exit={{ opacity: 0, height: 0, y: -6 }}
+                    transition={{ duration: 0.2, ease: 'easeOut' }}
+                  >
+                    <div className="squad-subject-inline">
+                      {Object.entries(user.todaySubjects).length > 0 ? (
+                        Object.entries(user.todaySubjects).map(([subject, hours]) => (
+                          <span key={subject} className="squad-subject-time">
+                            <span>{subject}</span>
+                            <strong>{hours.toFixed(1)}h</strong>
+                          </span>
+                        ))
+                      ) : (
+                        <p className="muted squad-no-subjects">No subject time logged today.</p>
+                      )}
+                    </div>
+                    <div className="squad-expanded-status">
+                      <span>{statusLabel}</span>
+                      {status === 'studying' && session ? <strong>{Math.floor((now - session.startTime) / 60000)}m</strong> : null}
+                    </div>
+                    <div className="squad-member-subjects">
+                      <span className="detail-label">Momentum</span>
+                      <span className={`detail-value ai-tag ${tag.className}`}>{tag.text}</span>
+                    </div>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+            </motion.div>
           )
         })}
 
-        {frozenMembers.map((user) => (
-          <div key={user.uid} className="squad-member-card inactive-member frozen-member">
+        {frozenMembers.map((user, index) => (
+          <motion.div
+            key={user.uid}
+            className="squad-member-card inactive-member frozen-member"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, delay: (displayMembers.length + index) * 0.03 }}
+            layout
+          >
             <div className="squad-member-main">
               <AvatarIcon username={user.username} size={32} />
               <div className="squad-member-info">
@@ -139,9 +168,9 @@ export function SquadCompetition() {
               <span className="squad-status-dot dot-inactive" aria-label="Frozen" />
               <span className="rank-badge">Frozen</span>
             </div>
-          </div>
+          </motion.div>
         ))}
-      </div>
+      </motion.div>
     </section>
   )
 }

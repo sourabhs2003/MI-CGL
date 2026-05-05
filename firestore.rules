@@ -10,5 +10,8 @@ service cloud.firestore {
     match /groupTasks/{taskId} {
       allow read, write: if true;
     }
+    match /notificationOutbox/{notificationId} {
+      allow read, write: if true;
+    }
   }
 }

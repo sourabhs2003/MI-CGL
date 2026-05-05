@@ -12,9 +12,13 @@ import {
 } from 'firebase/firestore'
 import { format } from 'date-fns'
 import { getDb } from '../firebase'
+import { USERS } from '../lib/auth'
+import { prepareFirestoreData } from '../lib/firestoreSanitize'
+import { getIdentity } from '../lib/identity'
 import { xpFromStudySeconds } from '../lib/xp'
 import { currentMonthKey, isFrozenProfile } from '../lib/activityStatus'
 import { calculateStudyXP, isSessionSuspicious } from './xpCalculation'
+import { notifySquadStudyStarted } from './notifications'
 import type { Subject, TimeOfDay } from '../types'
 
 type StudySessionInput = {
@@ -98,7 +102,7 @@ async function persistStudySession(uid: string, input: StudySessionInput): Promi
     }
 
     const sessionRef = doc(collection(db, `users/${uid}/sessions`))
-    tx.set(sessionRef, {
+    tx.set(sessionRef, prepareFirestoreData({
       subject: input.subject,
       topic: input.topic,
       durationSec: input.durationSec,
@@ -107,11 +111,11 @@ async function persistStudySession(uid: string, input: StudySessionInput): Promi
       endTime: input.endTime ?? null,
       timeOfDay: input.timeOfDay ?? null,
       endedAt: serverTimestamp(),
-    })
+    }))
 
     tx.set(
       userRef,
-      {
+      prepareFirestoreData({
         xp: currentMonthlyXp + eligibleXp,
         lifetimeXp: increment(eligibleXp),
         xpMonth: monthKey,
@@ -120,18 +124,18 @@ async function persistStudySession(uid: string, input: StudySessionInput): Promi
         isFrozen: false,
         frozenAt: null,
         comebackAt: wasFrozen ? serverTimestamp() : (prev.comebackAt ?? null),
-      },
+      }),
       { merge: true },
     )
 
     const dailyRef = doc(db, `users/${uid}/dailyStats`, today)
     tx.set(
       dailyRef,
-      {
+      prepareFirestoreData({
         totalSec: increment(input.durationSec),
         sessionCount: increment(1),
         [`subjects.${input.subject}`]: increment(input.durationSec),
-      },
+      }),
       { merge: true },
     )
   })
@@ -205,7 +209,7 @@ export async function startSession(uid: string, subject: Subject): Promise<strin
   const today = format(new Date(), 'yyyy-MM-dd')
   const sessionRef = doc(collection(db, `users/${uid}/sessions`))
 
-  await setDoc(sessionRef, {
+  await setDoc(sessionRef, prepareFirestoreData({
     subject,
     startTime: Date.now(),
     endTime: null,
@@ -214,10 +218,16 @@ export async function startSession(uid: string, subject: Subject): Promise<strin
     isSuspicious: false,
     dateKey: today,
     dayKey: today,
-  })
+  }))
 
   // Update user's current session reference
-  await setDoc(doc(db, 'users', uid), { currentSessionId: sessionRef.id }, { merge: true })
+  await setDoc(doc(db, 'users', uid), prepareFirestoreData({ currentSessionId: sessionRef.id }), { merge: true })
+
+  const profileSnap = await getDoc(doc(db, 'users', uid))
+  const profile = profileSnap.data() as Record<string, unknown> | undefined
+  const username = USERS.find((row) => row.uid === uid)?.username ?? 'player'
+  const senderName = typeof profile?.displayName === 'string' ? profile.displayName : getIdentity(username).displayName
+  void notifySquadStudyStarted(uid, senderName)
 
   return sessionRef.id
 }
@@ -284,15 +294,15 @@ export async function stopSession(uid: string, sessionId: string): Promise<void>
     console.log('Updating user:', { studyXp, newStreak })
 
     // Do all writes after reads
-    tx.update(sessionRef, {
+    tx.update(sessionRef, prepareFirestoreData({
       endTime,
       duration: durationMs,
       durationSec,
       isSuspicious,
       endedAt: serverTimestamp(),
-    })
+    }))
 
-    tx.update(userRef, {
+    tx.update(userRef, prepareFirestoreData({
       xp: currentMonthlyXp + eligibleXp,
       lifetimeXp: increment(eligibleXp),
       xpMonth: monthKey,
@@ -302,17 +312,17 @@ export async function stopSession(uid: string, sessionId: string): Promise<void>
       frozenAt: null,
       comebackAt: wasFrozen ? serverTimestamp() : (prev.comebackAt ?? null),
       currentSessionId: null,
-    })
+    }))
 
     // Update daily stats
     const dailyRef = doc(db, `users/${uid}/dailyStats`, session.dateKey)
     tx.set(
       dailyRef,
-      {
+      prepareFirestoreData({
         totalSec: increment(durationSec),
         sessionCount: increment(1),
         [`subjects.${session.subject}`]: increment(durationSec),
-      },
+      }),
       { merge: true },
     )
   })
@@ -428,11 +438,11 @@ export async function deleteSession(uid: string, sessionId: string): Promise<voi
     const dailyRef = doc(db, `users/${cleanUid}/dailyStats`, cleanDateKey)
     tx.set(
       dailyRef,
-      {
+      prepareFirestoreData({
         totalSec: increment(-durationSec),
         sessionCount: increment(-1),
         [`subjects.${subject}`]: increment(-durationSec),
-      },
+      }),
       { merge: true },
     )
   })
@@ -481,10 +491,10 @@ export async function updateSession(
     }
 
     // Update the session
-    tx.update(sessionRef, {
+    tx.update(sessionRef, prepareFirestoreData({
       durationSec: newDurationSec,
       subject: newSubject,
-    })
+    }))
 
     // Update daily stats
     const dailyRef = doc(db, `users/${cleanUid}/dailyStats`, dateKey)
@@ -494,21 +504,21 @@ export async function updateSession(
       // Same subject, just update duration
       tx.set(
         dailyRef,
-        {
+        prepareFirestoreData({
           totalSec: increment(durationDiff),
           [`subjects.${newSubject}`]: increment(durationDiff),
-        },
+        }),
         { merge: true },
       )
     } else {
       // Different subject, deduct from old, add to new
       tx.set(
         dailyRef,
-        {
+        prepareFirestoreData({
           totalSec: increment(durationDiff),
           [`subjects.${oldSubject}`]: increment(-oldDurationSec),
           [`subjects.${newSubject}`]: increment(newDurationSec),
-        },
+        }),
         { merge: true },
       )
     }

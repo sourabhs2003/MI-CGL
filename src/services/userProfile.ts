@@ -1,5 +1,6 @@
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
 import { getDb } from '../firebase'
+import { prepareFirestoreData } from '../lib/firestoreSanitize'
 import { getIdentity } from '../lib/identity'
 import { currentMonthKey, getMonthlyXp, isFrozenProfile } from '../lib/activityStatus'
 import type { UserProfile } from '../types'
@@ -27,17 +28,22 @@ export async function ensureUserProfile(uid: string): Promise<void> {
 
     await setDoc(
       ref,
-      {
+      prepareFirestoreData({
         displayName: data.displayName ?? nextIdentity.displayName,
         avatarIcon: data.avatarIcon ?? nextIdentity.avatarIcon,
         avatarColor: data.avatarColor ?? nextIdentity.avatarColor,
-      },
+        notificationSettings: data.notificationSettings ?? {
+          enabled: true,
+          squadAlerts: true,
+          motivationAlerts: true,
+        },
+      }),
       { merge: true },
     )
     return
   }
 
-  await setDoc(ref, {
+  await setDoc(ref, prepareFirestoreData({
     xp: 0,
     lifetimeXp: 0,
     xpMonth: currentMonthKey(),
@@ -47,8 +53,18 @@ export async function ensureUserProfile(uid: string): Promise<void> {
     displayName: nextIdentity.displayName,
     avatarIcon: nextIdentity.avatarIcon,
     avatarColor: nextIdentity.avatarColor,
+    notificationSettings: {
+      enabled: true,
+      squadAlerts: true,
+      motivationAlerts: true,
+    },
+    notificationStats: {
+      dayKey: null,
+      sentToday: 0,
+      lastByType: {},
+    },
     createdAt: serverTimestamp(),
-  })
+  }))
 }
 
 export function profileFromSnap(data: Record<string, unknown> | undefined): UserProfile {
@@ -67,6 +83,13 @@ export function profileFromSnap(data: Record<string, unknown> | undefined): User
     displayName: data.displayName as string | undefined,
     avatarIcon: data.avatarIcon as string | undefined,
     avatarColor: data.avatarColor as string | undefined,
+    currentSessionId: (data.currentSessionId as string | null) ?? null,
+    notificationSettings: {
+      enabled: (data.notificationSettings as { enabled?: boolean } | undefined)?.enabled ?? true,
+      squadAlerts: (data.notificationSettings as { squadAlerts?: boolean } | undefined)?.squadAlerts ?? true,
+      motivationAlerts: (data.notificationSettings as { motivationAlerts?: boolean } | undefined)?.motivationAlerts ?? true,
+    },
+    notificationStats: (data.notificationStats as UserProfile['notificationStats']) ?? undefined,
     createdAt: data.createdAt,
   }
 }

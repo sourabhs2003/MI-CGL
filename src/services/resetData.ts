@@ -6,6 +6,7 @@ import {
   setDoc,
 } from 'firebase/firestore'
 import { getDb } from '../firebase'
+import { prepareFirestoreData } from '../lib/firestoreSanitize'
 
 /**
  * Reset all user progress data while preserving user identity.
@@ -22,11 +23,11 @@ export async function resetUserData(uid: string): Promise<void> {
     const userRef = doc(db, 'users', uid)
     await setDoc(
       userRef,
-      {
+      prepareFirestoreData({
         xp: 0,
         streak: 0,
         lastStudyDay: null,
-      },
+      }),
       { merge: true },
     )
     console.log('[RESET] User profile reset')
@@ -99,11 +100,11 @@ export async function resetAllSquadData(): Promise<void> {
       // Reset user profile (keep identity)
       await setDoc(
         doc(db, 'users', uid),
-        {
+        prepareFirestoreData({
           xp: 0,
           streak: 0,
           lastStudyDay: null,
-        },
+        }),
         { merge: true },
       )
 

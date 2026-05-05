@@ -1,22 +1,14 @@
 import { useMemo } from 'react'
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  XAxis,
-  YAxis,
-  ResponsiveContainer,
-  Tooltip,
-} from 'recharts'
 import type { StudySessionDoc, Subject } from '../types'
-import { lastNDaysKeys } from '../lib/dates'
+import { hasAnyStudy, hasStudyInKeys, dayKeysEndingAt } from '../lib/sessionGraphData'
 
 type Props = {
   sessions: StudySessionDoc[]
 }
 
 function buildSubjectStudy(sessions: StudySessionDoc[]) {
-  const monthKeys = new Set(lastNDaysKeys(30))
+  const monthKeys = new Set(dayKeysEndingAt(new Date(), 30))
+  const isFallback = !hasStudyInKeys(sessions, monthKeys) && hasAnyStudy(sessions)
   const totals = new Map<Subject, number>([
     ['Maths', 0],
     ['GS', 0],
@@ -24,47 +16,31 @@ function buildSubjectStudy(sessions: StudySessionDoc[]) {
     ['Reasoning', 0],
   ])
   for (const session of sessions) {
-    if (monthKeys.has(session.dayKey) && totals.has(session.subject)) {
+    if ((isFallback || monthKeys.has(session.dayKey)) && totals.has(session.subject)) {
       totals.set(session.subject, (totals.get(session.subject) ?? 0) + session.durationSec)
     }
   }
   const max = Math.max(...[...totals.values()], 1)
-  return [...totals.entries()]
-    .map(([name, sec]) => {
-      const hours = Number((sec / 3600).toFixed(1))
-      const ratio = sec / max
-      return {
-        name: name === 'GS' ? 'GA' : name,
-        hours,
-        strength: ratio > 0.66 ? 'High' : ratio > 0.33 ? 'Medium' : 'Low',
-        color: ratio > 0.66 ? '#00E6A8' : ratio > 0.33 ? '#4DA3FF' : '#FF4D4F',
-      }
-    })
-    .sort((a, b) => b.hours - a.hours)
-}
-
-function SubjectTooltip({
-  active,
-  payload,
-}: {
-  active?: boolean
-  payload?: Array<{ name?: string; value?: number; color?: string }>
-}) {
-  if (!active || !payload?.length) return null
-  return (
-    <div className="chart-tooltip">
-      <strong>{payload[0]?.name}</strong>
-      <div className="chart-tooltip-row">
-        <span className="chart-tooltip-dot" style={{ backgroundColor: payload[0]?.color }} />
-        <span>Hours</span>
-        <strong>{payload[0]?.value}h</strong>
-      </div>
-    </div>
-  )
+  return {
+    data: [...totals.entries()]
+      .map(([name, sec]) => {
+        const hours = Number((sec / 3600).toFixed(1))
+        const ratio = sec / max
+        return {
+          name: name === 'GS' ? 'GA' : name,
+          hours,
+          strength: ratio > 0.66 ? 'High' : ratio > 0.33 ? 'Medium' : 'Low',
+          color: ratio > 0.66 ? '#00E6A8' : ratio > 0.33 ? '#4DA3FF' : '#FF4D4F',
+        }
+      })
+      .sort((a, b) => b.hours - a.hours),
+    isFallback,
+  }
 }
 
 export function SubjectGraph({ sessions }: Props) {
-  const subjectData = useMemo(() => buildSubjectStudy(sessions), [sessions])
+  const { data: subjectData, isFallback } = useMemo(() => buildSubjectStudy(sessions), [sessions])
+  const xAxisMax = Math.max(...subjectData.map((subject) => subject.hours), 1)
 
   if (subjectData.every((d) => d.hours === 0)) {
     return (
@@ -76,29 +52,26 @@ export function SubjectGraph({ sessions }: Props) {
 
   return (
     <div className="graph-card">
+      {isFallback && (
+        <div className="mini-insight">
+          <span>Showing all-time subject balance</span>
+        </div>
+      )}
       <div className="chart-container">
-        <ResponsiveContainer width="100%" height={220}>
-          <BarChart data={subjectData} layout="vertical" barSize={20}>
-            <CartesianGrid stroke="rgba(255,255,255,0.08)" horizontal={false} />
-            <XAxis
-              type="number"
-              domain={[0, Math.ceil(Math.max(...subjectData.map(d => d.hours), 1) / 1.5)]}
-              tick={{ fill: "#9CA3AF", fontSize: 10 }}
-            />
-            <YAxis
-              type="category"
-              dataKey="name"
-              tick={{ fill: "#FFFFFF", fontSize: 11 }}
-              width={60}
-            />
-            <Tooltip content={<SubjectTooltip />} />
-            <Bar
-              dataKey="hours"
-              radius={[0, 4, 4, 0]}
-              fill="#00E6A8"
-            />
-          </BarChart>
-        </ResponsiveContainer>
+        <div className="subject-bars" role="img" aria-label="Subject study hours">
+          {subjectData.map((subject) => (
+            <div className="subject-bar-row" key={subject.name}>
+              <span className="subject-bar-label">{subject.name}</span>
+              <div className="subject-bar-track">
+                <span
+                  className="subject-bar-fill"
+                  style={{ width: `${Math.max(subject.hours > 0 ? 6 : 0, (subject.hours / xAxisMax) * 100)}%`, background: subject.color }}
+                />
+              </div>
+              <strong>{subject.hours}h</strong>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )

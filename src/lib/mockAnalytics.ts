@@ -11,7 +11,11 @@ export type SubjectMetric = {
 }
 
 export function sortMocksChronologically<T extends MockDoc>(mocks: T[]): T[] {
-  return [...mocks].sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt))
+  return [...mocks].sort((a, b) => {
+    const aMillis = toMillis(a.createdAt) ?? 0
+    const bMillis = toMillis(b.createdAt) ?? 0
+    return aMillis - bMillis
+  })
 }
 
 export function normalizeScore(score: number, total: number): number {

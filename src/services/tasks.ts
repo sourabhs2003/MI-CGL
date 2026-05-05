@@ -14,6 +14,7 @@ import {
 import { format } from 'date-fns'
 import { getDb } from '../firebase'
 import { currentMonthKey, isFrozenProfile } from '../lib/activityStatus'
+import { prepareFirestoreData } from '../lib/firestoreSanitize'
 import { XP_TASK_DONE } from '../lib/xp'
 import type { TaskDoc } from '../types'
 
@@ -130,7 +131,7 @@ export async function addTask(
   const today = input.dateKey ?? format(new Date(), 'yyyy-MM-dd')
   
   if (input.isGroupTask) {
-    await addDoc(collection(getDb(), 'groupTasks'), {
+    await addDoc(collection(getDb(), 'groupTasks'), prepareFirestoreData({
       title: input.title,
       subject: input.subject,
       type: input.type ?? 'study',
@@ -146,11 +147,11 @@ export async function addTask(
       createdAt: serverTimestamp(),
       completedBy: [],
       completedAtBy: {},
-    })
+    }))
     return
   }
 
-  await addDoc(collection(getDb(), `users/${uid}/tasks`), {
+  await addDoc(collection(getDb(), `users/${uid}/tasks`), prepareFirestoreData({
     title: input.title,
     subject: input.subject,
     type: input.type ?? 'study',
@@ -164,7 +165,7 @@ export async function addTask(
     isGroupTask: false,
     createdBy: input.createdBy ?? null,
     createdAt: serverTimestamp(),
-  })
+  }))
 }
 
 export async function completeTask(uid: string, task: TaskDoc): Promise<void> {
@@ -188,11 +189,11 @@ export async function completeTask(uid: string, task: TaskDoc): Promise<void> {
       const currentMonthlyXp = prev.xpMonth === monthKey ? Number(prev.xp) || 0 : 0
       const earnedXp = isFrozenProfile(prev) ? 0 : getTaskXp(task.priority)
 
-      tx.update(groupRef, {
+      tx.update(groupRef, prepareFirestoreData({
         completedBy: arrayUnion(uid),
         [`completedAtBy.${uid}`]: serverTimestamp(),
-      })
-      tx.set(userRef, { xp: currentMonthlyXp + earnedXp, lifetimeXp: increment(earnedXp), xpMonth: monthKey }, { merge: true })
+      }))
+      tx.set(userRef, prepareFirestoreData({ xp: currentMonthlyXp + earnedXp, lifetimeXp: increment(earnedXp), xpMonth: monthKey }), { merge: true })
     })
     return
   }
@@ -210,8 +211,8 @@ export async function completeTask(uid: string, task: TaskDoc): Promise<void> {
     const currentMonthlyXp = prev.xpMonth === monthKey ? Number(prev.xp) || 0 : 0
     const earnedXp = isFrozenProfile(prev) ? 0 : getTaskXp(task.priority)
 
-    tx.update(ref, { completed: true, completedAt: serverTimestamp() })
-    tx.set(userRef, { xp: currentMonthlyXp + earnedXp, lifetimeXp: increment(earnedXp), xpMonth: monthKey }, { merge: true })
+    tx.update(ref, prepareFirestoreData({ completed: true, completedAt: serverTimestamp() }))
+    tx.set(userRef, prepareFirestoreData({ xp: currentMonthlyXp + earnedXp, lifetimeXp: increment(earnedXp), xpMonth: monthKey }), { merge: true })
   })
 }
 

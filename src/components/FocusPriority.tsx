@@ -107,7 +107,7 @@ export function FocusPriority({ sessions, mocks }: Props) {
     <section className="focus-priority">
       <div className="priority-header">
         <AlertTriangle size={16} className="priority-icon" />
-        <span className="priority-title">🔥 Priority Focus</span>
+        <span className="priority-title">Priority Focus</span>
       </div>
       <div className="priority-list">
         {priorities.slice(0, 3).map((item, index) => (

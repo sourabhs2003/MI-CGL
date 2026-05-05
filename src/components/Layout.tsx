@@ -2,7 +2,10 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { BarChart3, CheckSquare, Home, LogOut, Trophy, Users } from 'lucide-react'
 import { AvatarIcon } from '../components/AvatarIcon'
+import { NotificationCenter } from '../components/NotificationCenter'
 import { useAuth } from '../context/AuthContext'
+import { useForegroundNotifications } from '../hooks/useNotifications'
+import { useUserProfile } from '../hooks/useUserProfile'
 import { getIdentity } from '../lib/identity'
 
 const links = [
@@ -17,6 +20,8 @@ export function Layout() {
   const { logout, user } = useAuth()
   const identity = getIdentity(user?.username ?? 'player')
   const label = user?.displayName ?? identity.displayName
+  const { profile } = useUserProfile(user?.uid)
+  useForegroundNotifications(Boolean(profile?.notificationSettings?.enabled))
 
   return (
     <div className="shell">
@@ -50,6 +55,7 @@ export function Layout() {
         </div>
 
         <div className="nav-user">
+          {user?.uid ? <NotificationCenter uid={user.uid} profile={profile} /> : null}
           <div className="nav-email avatar-inline" style={{ color: user?.avatarColor ?? identity.avatar.color }}>
             <AvatarIcon username={user?.username ?? identity.username} size={24} />
             <span>{label}</span>

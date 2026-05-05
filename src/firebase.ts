@@ -1,5 +1,6 @@
 import { getApps, initializeApp, type FirebaseApp } from 'firebase/app'
 import { getFirestore } from 'firebase/firestore'
+import { getMessaging, isSupported, type Messaging } from 'firebase/messaging'
 
 const firebaseConfig = {
   apiKey: 'AIzaSyCZMfIl46ea7C_1U_8XEmjpeImg4-so9tk',
@@ -25,3 +26,10 @@ export function getFirebaseApp(): FirebaseApp {
 export function getDb() {
   return getFirestore(getFirebaseApp())
 }
+
+export async function getFcmMessaging(): Promise<Messaging | null> {
+  if (!(await isSupported())) return null
+  return getMessaging(getFirebaseApp())
+}
+
+export const publicFirebaseConfig = firebaseConfig

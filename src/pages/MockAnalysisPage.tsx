@@ -1,85 +1,70 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { motion } from 'framer-motion'
 import { Link } from 'react-router-dom'
-import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { AlertTriangle, BarChart3, CalendarDays, ChevronDown, Clock3, Crosshair, Flame, ListChecks, Sparkles, Target, TrendingDown, TrendingUp, Trophy } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useMocks } from '../hooks/useFirestoreData'
-import { normalizeScore, sortMocksChronologically, splitMocks } from '../lib/mockAnalytics'
+import { normalizeScore, sortMocksChronologically } from '../lib/mockAnalytics'
 import { toMillis } from '../lib/firestoreTime'
-import type { FullMockDoc, MockDoc, SectionName, SectionalMockDoc } from '../types'
+import type { FullExamType, MockDoc, SectionName } from '../types'
+import type { AnalysisTrendPoint, SectionChartPoint } from '../components/MockAnalysisCharts'
 
-type DashboardTab = 'full' | 'sectional'
-type SectionalSubjectKey = 'Maths' | 'Reasoning' | 'English' | 'GS'
-type SubjectStatus = 'Weak' | 'Improving' | 'Strong'
+const ScoreTrendChart = lazy(() => import('../components/MockAnalysisCharts').then((module) => ({ default: module.ScoreTrendChart })))
+const AccuracyTrendChart = lazy(() => import('../components/MockAnalysisCharts').then((module) => ({ default: module.AccuracyTrendChart })))
+const SectionPerformanceChart = lazy(() => import('../components/MockAnalysisCharts').then((module) => ({ default: module.SectionPerformanceChart })))
+const AttemptAccuracyChart = lazy(() => import('../components/MockAnalysisCharts').then((module) => ({ default: module.AttemptAccuracyChart })))
 
-type MetricStripItem = {
-  label: string
-  value: string
-  hint?: string
-}
-
-type TrendPoint = {
-  id: string
-  label: string
-  dateLabel: string
-  score: number
-  accuracy: number
-  attempted: number
-  total: number
-  percentile: number | null
-}
-
-type FullSectionRow = {
+type DateRangeFilter = 'all' | '7d' | '30d' | '90d'
+type ExamFilter = 'all' | FullExamType | 'sectional'
+type MetricTone = 'good' | 'average' | 'weak' | 'neutral'
+type SectionRow = {
   name: string
   averageScore: number
   averageAccuracy: number
-  latestScore: number
+  attempts: number
+  averageTime: number
 }
 
-type SubjectInsight = {
-  title: string
-  body: string
+type AnalysisSummary = {
+  totalMocks: number
+  averageScore: number
+  bestScore: number
+  accuracy: number
+  weakestSection: SectionRow | null
+  strongestSection: SectionRow | null
+  averageTime: number
+  attemptRate: number
+  bestWindow: string | null
+  bestWindowScore: number | null
+  scoreTrend: AnalysisTrendPoint[]
+  sectionRows: SectionRow[]
+  sectionChart: SectionChartPoint[]
 }
 
-type SectionalSubjectSummary = {
-  key: SectionalSubjectKey
-  label: string
-  mocks: SectionalMockDoc[]
-  trend: TrendPoint[]
-  metrics: MetricStripItem[]
-  status: SubjectStatus
-  statusDetail: string
-  insights: SubjectInsight[]
+type CompareSnapshot = {
+  recentAverage: number
+  overallAverage: number
+  delta: number
 }
 
-type FullMockSummary = {
-  metrics: MetricStripItem[]
-  scoreTrend: TrendPoint[]
-  accuracyTrend: TrendPoint[]
-  contributionData: Array<{ name: string; score: number }>
-  sectionRows: FullSectionRow[]
-  strongest?: FullSectionRow
-  weakest?: FullSectionRow
-}
-
-type QuickInsight = {
-  label: string
+type Insight = {
+  id: string
+  tone: MetricTone
+  icon: ReactNode
+  message: string
   value: string
-  detail: string
 }
 
-const sectionalSubjects: Array<{ key: SectionalSubjectKey; label: string }> = [
-  { key: 'Maths', label: 'Quant' },
-  { key: 'Reasoning', label: 'Reasoning' },
-  { key: 'English', label: 'English' },
-  { key: 'GS', label: 'GS' },
-]
-
-const fullSectionDisplayMap: Record<SectionName, string> = {
+const sectionDisplayMap: Record<SectionName, string> = {
   Maths: 'Quant',
   Reasoning: 'Reasoning',
   English: 'English',
   GA: 'GS',
+}
+
+function average(values: number[]) {
+  if (!values.length) return 0
+  return values.reduce((sum, value) => sum + value, 0) / values.length
 }
 
 function formatShortDate(value: unknown) {
@@ -88,639 +73,394 @@ function formatShortDate(value: unknown) {
   return new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short' }).format(new Date(millis))
 }
 
-function formatScore(score: number, total: number) {
-  return `${Math.round(score)} / ${Math.round(total)}`
+function formatMockTitle(mock: MockDoc) {
+  if (mock.type === 'full') return mock.exam.replace('SSC CGL ', '')
+  if (mock.subject === 'Maths') return 'Quant Sectional'
+  if (mock.subject === 'GS') return 'GS Sectional'
+  return `${mock.subject} Sectional`
 }
 
-function formatPercentage(value: number) {
-  return `${value.toFixed(1)}%`
+function getTimeWindowLabel(value: unknown) {
+  const millis = toMillis(value)
+  if (!millis) return null
+  const hour = new Date(millis).getHours()
+  if (hour < 12) return 'Morning'
+  if (hour < 17) return 'Afternoon'
+  if (hour < 21) return 'Evening'
+  return 'Night'
 }
 
-function average(values: number[]) {
-  if (!values.length) return 0
-  return values.reduce((sum, value) => sum + value, 0) / values.length
+function isWithinDateRange(mock: MockDoc, range: DateRangeFilter) {
+  if (range === 'all') return true
+  const millis = toMillis(mock.createdAt)
+  if (!millis) return true
+  const days = range === '7d' ? 7 : range === '30d' ? 30 : 90
+  return Date.now() - millis <= days * 24 * 60 * 60 * 1000
 }
 
-function averageAttemptRate(points: TrendPoint[]) {
-  if (!points.length) return 0
-  return average(points.map((point) => (point.total > 0 ? (point.attempted / point.total) * 100 : 0)))
+function matchesExamFilter(mock: MockDoc, examFilter: ExamFilter) {
+  if (examFilter === 'all') return true
+  if (examFilter === 'sectional') return mock.type === 'sectional'
+  return mock.type === 'full' && mock.exam === examFilter
 }
 
-function scoreRange(points: TrendPoint[]) {
-  if (!points.length) return 0
-  const scores = points.map((point) => point.score)
-  return Math.max(...scores) - Math.min(...scores)
+function metricTone(value: number, good = 75, weak = 50): MetricTone {
+  if (value >= good) return 'good'
+  if (value < weak) return 'weak'
+  return 'average'
 }
 
-function buildTrendPoints<T extends MockDoc>(mocks: T[]): TrendPoint[] {
-  return sortMocksChronologically(mocks).map((mock) => ({
-    id: mock.id,
-    label: formatShortDate(mock.createdAt),
-    dateLabel: formatShortDate(mock.createdAt),
-    score: mock.overall.score,
-    accuracy: mock.overall.accuracy,
-    attempted: mock.overall.attempted,
-    total: mock.overall.total,
-    percentile: mock.overall.percentile ?? null,
-  }))
-}
+function buildSectionRows(mocks: MockDoc[]): SectionRow[] {
+  const buckets = new Map<string, { score: number[]; accuracy: number[]; time: number[] }>()
 
-function deriveSubjectStatus(points: TrendPoint[]): { status: SubjectStatus; detail: string } {
-  if (!points.length) {
-    return { status: 'Weak', detail: 'No attempts yet in this subject.' }
+  for (const mock of mocks) {
+    if (mock.type === 'full') {
+      for (const section of mock.sections) {
+        const name = sectionDisplayMap[section.name]
+        const current = buckets.get(name) ?? { score: [], accuracy: [], time: [] }
+        current.score.push(normalizeScore(section.score, section.total))
+        current.accuracy.push(section.accuracy)
+        current.time.push(section.time)
+        buckets.set(name, current)
+      }
+      continue
+    }
+
+    const name = mock.subject === 'Maths' ? 'Quant' : mock.subject === 'GS' ? 'GS' : mock.subject
+    const current = buckets.get(name) ?? { score: [], accuracy: [], time: [] }
+    current.score.push(normalizeScore(mock.overall.score, mock.overall.total))
+    current.accuracy.push(mock.overall.accuracy)
+    current.time.push(mock.overall.time)
+    buckets.set(name, current)
   }
 
-  const latest = points.at(-1)!
-  const first = points[0]!
-  const recentWindow = points.slice(-3)
-  const scoreDelta = latest.score - first.score
-  const accuracyDelta = latest.accuracy - first.accuracy
-  const consistencyBand = scoreRange(recentWindow)
-
-  if (latest.accuracy >= 75 && normalizeScore(latest.score, latest.total) >= 70 && consistencyBand <= 8) {
-    return { status: 'Strong', detail: 'Scores are holding steady with solid accuracy.' }
-  }
-
-  if (scoreDelta >= 5 || accuracyDelta >= 6) {
-    return { status: 'Improving', detail: 'Recent attempts show upward movement in output or control.' }
-  }
-
-  return { status: 'Weak', detail: 'This subject still needs sharper conversion and steadier accuracy.' }
+  return [...buckets.entries()]
+    .map(([name, values]) => ({
+      name,
+      averageScore: Number(average(values.score).toFixed(1)),
+      averageAccuracy: Number(average(values.accuracy).toFixed(1)),
+      averageTime: Number(average(values.time).toFixed(1)),
+      attempts: values.score.length,
+    }))
+    .sort((a, b) => b.averageScore - a.averageScore)
 }
 
-function buildSubjectInsights(subjectLabel: string, points: TrendPoint[]): SubjectInsight[] {
-  if (!points.length) {
+function buildSummary(mocks: MockDoc[]): AnalysisSummary {
+  const ordered = sortMocksChronologically(mocks)
+  const scorePercentages = ordered.map((mock) => normalizeScore(mock.overall.score, mock.overall.total))
+  const accuracies = ordered.map((mock) => mock.overall.accuracy)
+  const times = ordered.map((mock) => mock.overall.time)
+  const attemptRates = ordered.map((mock) => (mock.overall.total > 0 ? (mock.overall.attempted / mock.overall.total) * 100 : 0))
+  const sectionRows = buildSectionRows(ordered)
+  const windowBuckets = new Map<string, number[]>()
+
+  for (const mock of ordered) {
+    const label = getTimeWindowLabel(mock.createdAt)
+    if (!label) continue
+    const current = windowBuckets.get(label) ?? []
+    current.push(normalizeScore(mock.overall.score, mock.overall.total))
+    windowBuckets.set(label, current)
+  }
+
+  const bestWindow = [...windowBuckets.entries()]
+    .map(([label, scores]) => ({ label, score: average(scores) }))
+    .sort((a, b) => b.score - a.score)[0]
+
+  return {
+    totalMocks: ordered.length,
+    averageScore: Number(average(scorePercentages).toFixed(1)),
+    bestScore: Number((scorePercentages.length ? Math.max(...scorePercentages) : 0).toFixed(1)),
+    accuracy: Number(average(accuracies).toFixed(1)),
+    weakestSection: sectionRows.at(-1) ?? null,
+    strongestSection: sectionRows[0] ?? null,
+    averageTime: Number(average(times).toFixed(1)),
+    attemptRate: Number(average(attemptRates).toFixed(1)),
+    bestWindow: bestWindow?.label ?? null,
+    bestWindowScore: bestWindow ? Number(bestWindow.score.toFixed(1)) : null,
+    scoreTrend: ordered.map((mock) => ({
+      id: mock.id,
+      label: formatShortDate(mock.createdAt),
+      score: Number(normalizeScore(mock.overall.score, mock.overall.total).toFixed(1)),
+      accuracy: Number(mock.overall.accuracy.toFixed(1)),
+      attempted: Number(mock.overall.attempted.toFixed(1)),
+      total: Number(mock.overall.total.toFixed(1)),
+      attemptRate: Number((mock.overall.total > 0 ? (mock.overall.attempted / mock.overall.total) * 100 : 0).toFixed(1)),
+    })),
+    sectionRows,
+    sectionChart: sectionRows.map((row) => ({
+      name: row.name,
+      score: row.averageScore,
+      accuracy: row.averageAccuracy,
+    })),
+  }
+}
+
+function buildCompareSnapshot(mocks: MockDoc[]): CompareSnapshot | null {
+  if (!mocks.length) return null
+  const ordered = sortMocksChronologically(mocks)
+  const overallAverage = average(ordered.map((mock) => normalizeScore(mock.overall.score, mock.overall.total)))
+  const recent = ordered.slice(-5)
+  const recentAverage = average(recent.map((mock) => normalizeScore(mock.overall.score, mock.overall.total)))
+  return {
+    recentAverage: Number(recentAverage.toFixed(1)),
+    overallAverage: Number(overallAverage.toFixed(1)),
+    delta: Number((recentAverage - overallAverage).toFixed(1)),
+  }
+}
+
+function buildInsights(mocks: MockDoc[], summary: AnalysisSummary): Insight[] {
+  const ordered = sortMocksChronologically(mocks)
+  if (ordered.length < 2) {
     return [
       {
-        title: 'Start signal',
-        body: `Log a few ${subjectLabel} mocks to unlock subject-level trend detection.`,
+        id: 'start',
+        tone: 'average',
+        icon: <Target size={18} />,
+        message: 'Add a few more mocks to unlock trend feedback.',
+        value: `${ordered.length}/2`,
       },
     ]
   }
 
-  const latest = points.at(-1)!
-  const first = points[0]!
-  const recentWindow = points.slice(-3)
-  const latestScorePct = normalizeScore(latest.score, latest.total)
-  const firstScorePct = normalizeScore(first.score, first.total)
-  const avgAttempted = average(points.map((point) => point.attempted))
-  const avgAccuracy = average(points.map((point) => point.accuracy))
-  const attemptDelta = latest.attempted - first.attempted
-  const accuracyDelta = latest.accuracy - first.accuracy
-  const scoreDelta = latestScorePct - firstScorePct
-  const stagnating = recentWindow.length >= 3 && scoreRange(recentWindow) <= 3
-
-  const attemptInsight =
-    attemptDelta >= 4 && accuracyDelta >= 0
-      ? 'You are taking on more questions without losing control, which usually signals better pacing.'
-      : attemptDelta >= 4 && accuracyDelta < 0
-        ? 'Attempts are rising faster than accuracy, so speed is outpacing precision right now.'
-        : avgAccuracy >= 80 && avgAttempted <= latest.total * 0.72
-          ? 'Accuracy is healthy, but attempt volume is still conservative and leaving marks on the table.'
-          : 'Attempts and accuracy are moving together in a fairly stable way.'
-
-  const trendInsight =
-    scoreDelta >= 8
-      ? 'The score trend is clearly moving upward across your recent attempts.'
-      : scoreDelta <= -5
-        ? 'Recent performance has dipped, so this subject needs a reset before it compounds.'
-        : stagnating
-          ? 'Scores are flat across recent attempts, which points to stagnation rather than randomness.'
-          : 'Progress is present, but the trend is not strong enough to feel locked in yet.'
-
-  const patternInsight =
-    latest.accuracy >= avgAccuracy + 5
-      ? `The latest ${subjectLabel} attempt shows cleaner decision-making than your usual baseline.`
-      : latestScorePct >= firstScorePct + 6
-        ? 'The latest paper converted better than your early attempts, so practice is paying off.'
-        : latest.accuracy < avgAccuracy - 5
-          ? 'The latest attempt slipped below your normal control level, so review misses before the next mock.'
-          : 'Your current pattern is stable, so the next gain will likely come from tighter review after each test.'
-
-  return [
-    { title: 'Attempts vs accuracy', body: attemptInsight },
-    { title: 'Trend read', body: trendInsight },
-    { title: 'Pattern to act on', body: patternInsight },
+  const first = ordered[0]!
+  const latest = ordered.at(-1)!
+  const scoreDelta = normalizeScore(latest.overall.score, latest.overall.total) - normalizeScore(first.overall.score, first.overall.total)
+  const accuracyDelta = latest.overall.accuracy - first.overall.accuracy
+  const recent = ordered.slice(-3)
+  const firstRecent = recent[0]
+  const latestRecent = recent.at(-1)
+  const recentScoreDelta = firstRecent && latestRecent
+    ? normalizeScore(latestRecent.overall.score, latestRecent.overall.total) - normalizeScore(firstRecent.overall.score, firstRecent.overall.total)
+    : 0
+  const insights: Insight[] = [
+    {
+      id: 'accuracy',
+      tone: accuracyDelta >= 0 ? 'good' : 'weak',
+      icon: accuracyDelta >= 0 ? <TrendingUp size={18} /> : <TrendingDown size={18} />,
+      message: accuracyDelta >= 0 ? 'Accuracy is improving across the filtered set.' : 'Accuracy slipped across the filtered set.',
+      value: `${accuracyDelta >= 0 ? '+' : ''}${accuracyDelta.toFixed(1)}%`,
+    },
+    {
+      id: 'score',
+      tone: scoreDelta >= 0 ? 'good' : 'weak',
+      icon: scoreDelta >= 0 ? <Trophy size={18} /> : <AlertTriangle size={18} />,
+      message: scoreDelta >= 0 ? 'Score direction is positive overall.' : 'Score direction needs attention.',
+      value: `${scoreDelta >= 0 ? '+' : ''}${scoreDelta.toFixed(1)} pts`,
+    },
   ]
-}
 
-function buildSectionalSubjectSummary(subject: SectionalSubjectKey, label: string, mocks: SectionalMockDoc[]): SectionalSubjectSummary {
-  const ordered = sortMocksChronologically(mocks.filter((mock) => mock.subject === subject))
-  const trend = buildTrendPoints(ordered)
-  const latest = ordered.at(-1)
-  const percentages = ordered.map((mock) => normalizeScore(mock.overall.score, mock.overall.total))
-  const percentiles = ordered
-    .map((mock) => mock.overall.percentile)
-    .filter((value): value is number => typeof value === 'number')
-  const bestScorePct = percentages.length ? Math.max(...percentages) : 0
-  const averageScorePct = average(percentages)
-  const latestPercentile = latest?.overall.percentile
-  const bestPercentile = percentiles.length ? Math.max(...percentiles) : null
-  const averagePercentile = percentiles.length ? average(percentiles) : null
-  const status = deriveSubjectStatus(trend)
-
-  return {
-    key: subject,
-    label,
-    mocks: ordered,
-    trend,
-    metrics: [
-      {
-        label: 'Latest Score',
-        value: latest ? formatScore(latest.overall.score, latest.overall.total) : '--',
-        hint: latest ? formatPercentage(normalizeScore(latest.overall.score, latest.overall.total)) : 'No attempts',
-      },
-      {
-        label: 'Best Score',
-        value: percentages.length ? formatPercentage(bestScorePct) : '--',
-        hint: latest ? `Best of ${ordered.length}` : undefined,
-      },
-      {
-        label: 'Average Score',
-        value: percentages.length ? formatPercentage(averageScorePct) : '--',
-        hint:
-          averagePercentile != null
-            ? `${formatPercentage(averagePercentile)} avg percentile`
-            : ordered.length
-              ? `${ordered.length} attempts`
-              : undefined,
-      },
-      {
-        label: 'Percentile',
-        value: latestPercentile != null ? formatPercentage(latestPercentile) : '--',
-        hint: bestPercentile != null ? `Best ${formatPercentage(bestPercentile)}` : 'Percentile not logged',
-      },
-      {
-        label: 'Total Attempts',
-        value: String(ordered.length),
-        hint: ordered.length ? `Latest ${formatShortDate(latest?.createdAt)}` : 'Start with one mock',
-      },
-    ],
-    status: status.status,
-    statusDetail: status.detail,
-    insights: buildSubjectInsights(label, trend),
-  }
-}
-
-function buildFullMockSummary(mocks: FullMockDoc[]): FullMockSummary {
-  const ordered = sortMocksChronologically(mocks)
-  const latest = ordered.at(-1)
-  const scorePercentages = ordered.map((mock) => normalizeScore(mock.overall.score, mock.overall.total))
-  const percentiles = ordered
-    .map((mock) => mock.overall.percentile)
-    .filter((value): value is number => typeof value === 'number')
-  const scoreTrend = buildTrendPoints(ordered)
-  const sectionBucket = new Map<string, { score: number; accuracy: number; count: number; latestScore: number }>()
-
-  for (const mock of ordered) {
-    for (const section of mock.sections) {
-      const name = fullSectionDisplayMap[section.name]
-      const current = sectionBucket.get(name) ?? { score: 0, accuracy: 0, count: 0, latestScore: 0 }
-      current.score += normalizeScore(section.score, section.total)
-      current.accuracy += section.accuracy
-      current.count += 1
-      current.latestScore = normalizeScore(section.score, section.total)
-      sectionBucket.set(name, current)
-    }
+  if (summary.weakestSection) {
+    insights.push({
+      id: 'weakest',
+      tone: 'weak',
+      icon: <Crosshair size={18} />,
+      message: `${summary.weakestSection.name} is the clearest repair area right now.`,
+      value: `${summary.weakestSection.averageScore.toFixed(1)}%`,
+    })
   }
 
-  const sectionRows = [...sectionBucket.entries()]
-    .map(([name, value]) => ({
-      name,
-      averageScore: Number((value.score / value.count).toFixed(1)),
-      averageAccuracy: Number((value.accuracy / value.count).toFixed(1)),
-      latestScore: Number(value.latestScore.toFixed(1)),
-    }))
-    .sort((a, b) => b.averageScore - a.averageScore)
-
-  return {
-    metrics: [
-      {
-        label: 'Latest Score',
-        value: latest ? formatScore(latest.overall.score, latest.overall.total) : '--',
-        hint: latest ? formatPercentage(normalizeScore(latest.overall.score, latest.overall.total)) : 'No mocks',
-      },
-      {
-        label: 'Average Score',
-        value: scorePercentages.length ? formatPercentage(average(scorePercentages)) : '--',
-        hint: ordered.length ? `${ordered.length} mocks` : undefined,
-      },
-      {
-        label: 'Percentile',
-        value: latest?.overall.percentile != null ? formatPercentage(latest.overall.percentile) : '--',
-        hint: percentiles.length ? `Avg ${formatPercentage(average(percentiles))}` : (latest?.exam ?? 'Latest full mock'),
-      },
-      {
-        label: 'Rank',
-        value:
-          latest?.overall.rank != null
-            ? latest.overall.rankTotal != null
-              ? `${latest.overall.rank}/${latest.overall.rankTotal}`
-              : String(latest.overall.rank)
-            : '--',
-        hint: latest?.overall.rank != null ? 'Latest full mock rank' : 'Rank not captured in current data',
-      },
-    ],
-    scoreTrend,
-    accuracyTrend: scoreTrend,
-    contributionData: sectionRows.map((row) => ({ name: row.name, score: row.latestScore })),
-    sectionRows,
-    strongest: sectionRows[0],
-    weakest: sectionRows.at(-1),
+  if (summary.strongestSection) {
+    insights.push({
+      id: 'strongest',
+      tone: 'good',
+      icon: <Flame size={18} />,
+      message: `${summary.strongestSection.name} is carrying your performance baseline.`,
+      value: `${summary.strongestSection.averageScore.toFixed(1)}%`,
+    })
   }
+
+  if (recent.length >= 3) {
+    insights.push({
+      id: 'recent',
+      tone: recentScoreDelta >= 0 ? 'good' : 'weak',
+      icon: recentScoreDelta >= 0 ? <TrendingUp size={18} /> : <TrendingDown size={18} />,
+      message: recentScoreDelta >= 0 ? 'Last 3 mocks are trending upward.' : 'Your last 3 mocks are dropping.',
+      value: `${recentScoreDelta >= 0 ? '+' : ''}${recentScoreDelta.toFixed(1)} pts`,
+    })
+  }
+
+  if (summary.bestWindow && summary.bestWindowScore != null) {
+    insights.push({
+      id: 'window',
+      tone: 'average',
+      icon: <Clock3 size={18} />,
+      message: `You perform best in ${summary.bestWindow.toLowerCase()} mock sessions.`,
+      value: `${summary.bestWindowScore.toFixed(1)}%`,
+    })
+  }
+
+  return insights.slice(0, 5)
 }
 
-function EmptyState({ title, copy }: { title: string; copy: string }) {
-  return (
-    <section className="card mock-analysis-empty">
-      <h2>{title}</h2>
-      <p className="muted">{copy}</p>
-    </section>
-  )
+function buildAiBrief(summary: AnalysisSummary, compare: CompareSnapshot | null): string {
+  if (!summary.totalMocks) return 'Add mocks to unlock the AI brief.'
+  if (compare && compare.delta < -3) {
+    return `Recent score is ${Math.abs(compare.delta).toFixed(1)} points below baseline. Run a repair block for ${summary.weakestSection?.name ?? 'the weakest section'} before the next mock.`
+  }
+  if (summary.accuracy < 60) {
+    return `Accuracy is the biggest lever at ${summary.accuracy.toFixed(1)}%. Attempt fewer doubtful questions and review wrong answers first.`
+  }
+  if (summary.weakestSection && summary.strongestSection && summary.strongestSection.averageScore - summary.weakestSection.averageScore >= 12) {
+    return `${summary.weakestSection.name} is lagging behind ${summary.strongestSection.name}. Use a 2:1 practice split until the gap drops below 8 points.`
+  }
+  if (summary.bestWindow) {
+    return `Your best mock window is ${summary.bestWindow.toLowerCase()}. Put full mocks there and use other slots for revision.`
+  }
+  return 'Performance is stable. Keep the next mock timed and compare attempt rate with accuracy afterward.'
 }
 
-function SegmentedToggle({
-  value,
-  onChange,
-}: {
-  value: DashboardTab
-  onChange: (value: DashboardTab) => void
-}) {
-  return (
-    <div className="mock-analysis-toggle" role="tablist" aria-label="Mock analysis mode">
-      <button
-        type="button"
-        className={value === 'full' ? 'mock-analysis-toggle-btn active' : 'mock-analysis-toggle-btn'}
-        onClick={() => onChange('full')}
-      >
-        Full Mock
-      </button>
-      <button
-        type="button"
-        className={value === 'sectional' ? 'mock-analysis-toggle-btn active' : 'mock-analysis-toggle-btn'}
-        onClick={() => onChange('sectional')}
-      >
-        Sectional
-      </button>
-    </div>
-  )
+function useDesktopDefault() {
+  const [isDesktop, setIsDesktop] = useState(() => (typeof window === 'undefined' ? true : window.matchMedia('(min-width: 900px)').matches))
+
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 900px)')
+    const update = () => setIsDesktop(media.matches)
+    update()
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
+
+  return isDesktop
 }
 
-function MetricStrip({ items }: { items: MetricStripItem[] }) {
+function SectionFrame({ eyebrow, title, children, action }: { eyebrow: string; title: string; children: ReactNode; action?: ReactNode }) {
   return (
-    <div className="mock-analysis-strip" role="list">
-      {items.map((item) => (
-        <article key={item.label} className="mock-analysis-strip-item" role="listitem">
-          <span>{item.label}</span>
-          <strong>{item.value}</strong>
-          {item.hint ? <small>{item.hint}</small> : null}
-        </article>
-      ))}
-    </div>
-  )
-}
-
-function ChartShell({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string
-  subtitle?: string
-  children: ReactNode
-}) {
-  return (
-    <section className="mock-analysis-chart">
-      <div className="mock-analysis-chart-head">
+    <motion.section
+      className="analysis-section-frame"
+      initial={{ opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.24 }}
+    >
+      <div className="analysis-section-head">
         <div>
+          <p className="eyebrow">{eyebrow}</p>
           <h2>{title}</h2>
-          {subtitle ? <p className="muted">{subtitle}</p> : null}
         </div>
+        {action}
       </div>
-      <div className="mock-analysis-chart-body">{children}</div>
-    </section>
+      {children}
+    </motion.section>
   )
 }
 
-function ScoreTrendChart({ data, color }: { data: TrendPoint[]; color: string }) {
-  return (
-    <ResponsiveContainer width="100%" height={250}>
-      <LineChart data={data}>
-        <CartesianGrid stroke="rgba(148, 163, 184, 0.09)" vertical={false} />
-        <XAxis dataKey="label" stroke="#7f8ea3" axisLine={false} tickLine={false} />
-        <YAxis stroke="#7f8ea3" axisLine={false} tickLine={false} />
-        <Tooltip content={<ChartTooltip />} />
-        <Line type="monotone" dataKey="score" stroke={color} strokeWidth={3} dot={false} name="Score" />
-      </LineChart>
-    </ResponsiveContainer>
-  )
-}
-
-function AccuracyTrendChart({ data, color }: { data: TrendPoint[]; color: string }) {
-  return (
-    <ResponsiveContainer width="100%" height={250}>
-      <LineChart data={data}>
-        <CartesianGrid stroke="rgba(148, 163, 184, 0.09)" vertical={false} />
-        <XAxis dataKey="label" stroke="#7f8ea3" axisLine={false} tickLine={false} />
-        <YAxis stroke="#7f8ea3" axisLine={false} tickLine={false} domain={[0, 100]} />
-        <Tooltip content={<ChartTooltip />} />
-        <Line type="monotone" dataKey="accuracy" stroke={color} strokeWidth={3} dot={false} name="Accuracy" />
-      </LineChart>
-    </ResponsiveContainer>
-  )
-}
-
-function PercentileTrendChart({ data, color }: { data: TrendPoint[]; color: string }) {
-  return (
-    <ResponsiveContainer width="100%" height={250}>
-      <LineChart data={data}>
-        <CartesianGrid stroke="rgba(148, 163, 184, 0.09)" vertical={false} />
-        <XAxis dataKey="label" stroke="#7f8ea3" axisLine={false} tickLine={false} />
-        <YAxis stroke="#7f8ea3" axisLine={false} tickLine={false} domain={[0, 100]} />
-        <Tooltip content={<ChartTooltip />} />
-        <Line type="monotone" dataKey="percentile" stroke={color} strokeWidth={3} dot={false} name="Percentile" connectNulls />
-      </LineChart>
-    </ResponsiveContainer>
-  )
-}
-
-function AttemptsChart({ data }: { data: TrendPoint[] }) {
-  return (
-    <ResponsiveContainer width="100%" height={250}>
-      <LineChart data={data}>
-        <CartesianGrid stroke="rgba(148, 163, 184, 0.09)" vertical={false} />
-        <XAxis dataKey="label" stroke="#7f8ea3" axisLine={false} tickLine={false} />
-        <YAxis stroke="#7f8ea3" axisLine={false} tickLine={false} />
-        <Tooltip content={<ChartTooltip />} />
-        <Line type="monotone" dataKey="attempted" stroke="#f59e0b" strokeWidth={3} dot={false} name="Attempted" />
-        <Line type="monotone" dataKey="total" stroke="#64748b" strokeWidth={2} dot={false} name="Total" />
-      </LineChart>
-    </ResponsiveContainer>
-  )
-}
-
-function ContributionChart({ data }: { data: Array<{ name: string; score: number }> }) {
-  return (
-    <ResponsiveContainer width="100%" height={260}>
-      <BarChart data={data}>
-        <CartesianGrid stroke="rgba(148, 163, 184, 0.09)" vertical={false} />
-        <XAxis dataKey="name" stroke="#7f8ea3" axisLine={false} tickLine={false} />
-        <YAxis stroke="#7f8ea3" axisLine={false} tickLine={false} />
-        <Tooltip content={<ChartTooltip />} />
-        <Bar dataKey="score" fill="#7c3aed" radius={[12, 12, 0, 0]} name="Latest score %" />
-      </BarChart>
-    </ResponsiveContainer>
-  )
-}
-
-function ChartTooltip({
-  active,
-  payload,
-  label,
+function FilterBar({
+  dateRange,
+  examFilter,
+  onDateRangeChange,
+  onExamFilterChange,
 }: {
-  active?: boolean
-  payload?: Array<{ name?: string; value?: number | string; color?: string }>
-  label?: string | number
+  dateRange: DateRangeFilter
+  examFilter: ExamFilter
+  onDateRangeChange: (value: DateRangeFilter) => void
+  onExamFilterChange: (value: ExamFilter) => void
 }) {
-  if (!active || !payload?.length) return null
   return (
-    <div className="chart-tooltip">
-      <strong>{label}</strong>
-      {payload.map((item) => (
-        <div key={`${item.name}-${item.value}`} className="chart-tooltip-row">
-          <span className="chart-tooltip-dot" style={{ backgroundColor: item.color }} />
-          <span>{item.name}</span>
-          <strong>{item.value}</strong>
-        </div>
-      ))}
+    <div className="analysis-filter-panel">
+      <label>
+        <span>Date range</span>
+        <select value={dateRange} onChange={(event) => onDateRangeChange(event.target.value as DateRangeFilter)}>
+          <option value="all">All time</option>
+          <option value="7d">Last 7 days</option>
+          <option value="30d">Last 30 days</option>
+          <option value="90d">Last 90 days</option>
+        </select>
+      </label>
+      <label>
+        <span>Exam type</span>
+        <select value={examFilter} onChange={(event) => onExamFilterChange(event.target.value as ExamFilter)}>
+          <option value="all">All mocks</option>
+          <option value="SSC CGL Tier 1">Tier 1</option>
+          <option value="SSC CGL Tier 2">Tier 2</option>
+          <option value="sectional">Sectional</option>
+        </select>
+      </label>
     </div>
   )
 }
 
-function FullMockView({ summary }: { summary: FullMockSummary }) {
-  const latest = summary.scoreTrend.at(-1)
-  const fullInsights: QuickInsight[] = [
-    {
-      label: 'Latest Pulse',
-      value: latest ? `${normalizeScore(latest.score, latest.total).toFixed(1)}%` : '--',
-      detail: latest ? `${latest.attempted}/${latest.total} attempted with ${latest.accuracy.toFixed(1)}% accuracy` : 'Log one full mock to activate this panel.',
-    },
-    {
-      label: 'Attempt Discipline',
-      value: `${averageAttemptRate(summary.scoreTrend).toFixed(1)}%`,
-      detail: latest ? `Latest attempt pace is ${latest.attempted}/${latest.total}` : 'No attempt history yet.',
-    },
-    {
-      label: 'Section Gap',
-      value:
-        summary.strongest && summary.weakest
-          ? `${(summary.strongest.averageScore - summary.weakest.averageScore).toFixed(1)} pts`
-          : '--',
-      detail:
-        summary.strongest && summary.weakest
-          ? `${summary.strongest.name} is currently ahead of ${summary.weakest.name}`
-          : 'Need section data to compare strengths.',
-    },
-  ]
-
+function SummaryCard({ label, value, hint, tone, icon }: { label: string; value: string; hint: string; tone: MetricTone; icon: ReactNode }) {
   return (
-    <section className="mock-analysis-layout">
-      <MetricStrip items={summary.metrics} />
-
-      <section className="mock-analysis-quick-grid">
-        {fullInsights.map((item) => (
-          <article key={item.label} className="mock-analysis-quick-card">
-            <span>{item.label}</span>
-            <strong>{item.value}</strong>
-            <small>{item.detail}</small>
-          </article>
-        ))}
-      </section>
-
-      <div className="mock-analysis-charts-grid">
-        <ChartShell title="Score Trend" subtitle="See how full mock output is moving over time.">
-          <ScoreTrendChart data={summary.scoreTrend} color="#16a34a" />
-        </ChartShell>
-
-        <ChartShell title="Accuracy Trend" subtitle="Keep accuracy separate so quality stays visible.">
-          <AccuracyTrendChart data={summary.accuracyTrend} color="#0ea5e9" />
-        </ChartShell>
-
-        <ChartShell title="Percentile Trend" subtitle="Track how your standing is moving across full mocks.">
-          <PercentileTrendChart data={summary.scoreTrend} color="#a855f7" />
-        </ChartShell>
-
-        <ChartShell title="Section Contribution" subtitle="Latest full mock contribution by section score percentage.">
-          <ContributionChart data={summary.contributionData} />
-        </ChartShell>
-      </div>
-
-      <section className="mock-analysis-section-compare">
-        <div className="mock-analysis-chart-head">
-          <div>
-            <h2>Section Performance</h2>
-            <p className="muted">All sections in one view, with strongest and weakest signals surfaced.</p>
-          </div>
-        </div>
-
-        <div className="mock-analysis-section-callouts">
-          <article className="mock-analysis-callout strong">
-            <span>Strongest</span>
-            <strong>{summary.strongest?.name ?? '--'}</strong>
-            <small>{summary.strongest ? `${summary.strongest.averageScore.toFixed(1)}% avg score` : 'No data'}</small>
-          </article>
-
-          <article className="mock-analysis-callout weak">
-            <span>Weakest</span>
-            <strong>{summary.weakest?.name ?? '--'}</strong>
-            <small>{summary.weakest ? `${summary.weakest.averageScore.toFixed(1)}% avg score` : 'No data'}</small>
-          </article>
-        </div>
-
-        <div className="mock-analysis-table">
-          {summary.sectionRows.map((row) => (
-            <div key={row.name} className="mock-analysis-table-row compact">
-              <strong>{row.name}</strong>
-              <span>{row.averageScore.toFixed(1)}% avg score</span>
-              <span>{row.averageAccuracy.toFixed(1)}% avg accuracy</span>
-              <span>{row.latestScore.toFixed(1)}% latest</span>
-            </div>
-          ))}
-        </div>
-      </section>
-    </section>
+    <article className={`analysis-summary-card ${tone}`}>
+      <div className="analysis-summary-icon">{icon}</div>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{hint}</small>
+    </article>
   )
 }
 
-function StatusBadge({ status }: { status: SubjectStatus }) {
+function ChartCard({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <span className={`mock-analysis-status ${status.toLowerCase()}`}>{status}</span>
+    <article className="analysis-chart-card">
+      <h3>{title}</h3>
+      <div className="analysis-chart-body">{children}</div>
+    </article>
   )
 }
 
-function SectionalView({
-  subjects,
-  activeSubject,
-  onSubjectChange,
-}: {
-  subjects: SectionalSubjectSummary[]
-  activeSubject: SectionalSubjectKey
-  onSubjectChange: (value: SectionalSubjectKey) => void
-}) {
-  const active = subjects.find((subject) => subject.key === activeSubject) ?? subjects[0]
+function ChartLoader() {
+  return <div className="analysis-chart-loader">Loading charts...</div>
+}
 
-  if (!active) {
-    return <EmptyState title="No sectional data yet" copy="Log sectional mocks to unlock subject-wise tracking." />
-  }
-
-  const latest = active.trend.at(-1)
-  const subjectPulse: QuickInsight[] = [
-    {
-      label: 'Latest Score',
-      value: latest ? `${normalizeScore(latest.score, latest.total).toFixed(1)}%` : '--',
-      detail: latest ? `${latest.score}/${latest.total} in the latest paper` : 'No attempts yet.',
-    },
-    {
-      label: 'Attempt Rate',
-      value: latest ? `${((latest.attempted / latest.total) * 100).toFixed(1)}%` : '--',
-      detail: latest ? `${latest.attempted}/${latest.total} attempted` : 'No attempt history yet.',
-    },
-    {
-      label: 'Avg Accuracy',
-      value: active.trend.length ? `${average(active.trend.map((point) => point.accuracy)).toFixed(1)}%` : '--',
-      detail: active.trend.length ? `Across ${active.trend.length} logged attempts` : 'Accuracy will appear after the first mock.',
-    },
-  ]
+function CompareCard({ compare }: { compare: CompareSnapshot | null }) {
+  if (!compare) return null
 
   return (
-    <section className="mock-analysis-layout">
-      <div className="mock-analysis-subject-tabs" role="tablist" aria-label="Sectional subject tabs">
-        {subjects.map((subject) => (
-          <button
-            key={subject.key}
-            type="button"
-            className={subject.key === active.key ? 'mock-analysis-subject-tab active' : 'mock-analysis-subject-tab'}
-            onClick={() => onSubjectChange(subject.key)}
-          >
-            {subject.label}
-          </button>
-        ))}
+    <article className={`analysis-compare-card ${compare.delta >= 0 ? 'good' : 'weak'}`}>
+      <div>
+        <span>Last 5 vs overall</span>
+        <strong>{compare.delta >= 0 ? '+' : ''}{compare.delta.toFixed(1)} pts</strong>
       </div>
+      <p>
+        Recent average <strong>{compare.recentAverage.toFixed(1)}%</strong> against overall <strong>{compare.overallAverage.toFixed(1)}%</strong>.
+      </p>
+    </article>
+  )
+}
 
-      <AnimatePresence mode="wait">
-        <motion.section
-          key={active.key}
-          initial={{ opacity: 0, x: 18 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -18 }}
-          transition={{ duration: 0.24, ease: [0.4, 0, 0.2, 1] }}
-          className="mock-analysis-subject-panel"
-        >
-          <div className="mock-analysis-subject-head">
-            <div>
-              <p className="eyebrow">Sectional Analysis</p>
-              <h2>{active.label}</h2>
-            </div>
-            <div className="mock-analysis-status-wrap">
-              <StatusBadge status={active.status} />
-              <p className="muted">{active.statusDetail}</p>
-            </div>
-          </div>
+function InsightCard({ insight }: { insight: Insight }) {
+  return (
+    <article className={`analysis-insight-card ${insight.tone}`}>
+      <div className="analysis-insight-icon">{insight.icon}</div>
+      <p>{insight.message}</p>
+      <strong>{insight.value}</strong>
+    </article>
+  )
+}
 
-          <MetricStrip items={active.metrics} />
+function AiBriefCard({ message }: { message: string }) {
+  return (
+    <article className="analysis-ai-brief">
+      <div className="analysis-ai-brief-icon">
+        <Sparkles size={18} />
+      </div>
+      <div>
+        <span>AI brief</span>
+        <strong>{message}</strong>
+      </div>
+    </article>
+  )
+}
 
-          <section className="mock-analysis-quick-grid">
-            {subjectPulse.map((item) => (
-              <article key={item.label} className="mock-analysis-quick-card">
-                <span>{item.label}</span>
-                <strong>{item.value}</strong>
-                <small>{item.detail}</small>
-              </article>
-            ))}
-          </section>
+function DetailPanel({ title, icon, children, defaultOpen }: { title: string; icon: ReactNode; children: ReactNode; defaultOpen: boolean }) {
+  return (
+    <details className="analysis-detail-panel" open={defaultOpen}>
+      <summary>
+        <span>{icon}</span>
+        <strong>{title}</strong>
+        <ChevronDown size={18} />
+      </summary>
+      <div className="analysis-detail-content">{children}</div>
+    </details>
+  )
+}
 
-          {!active.trend.length ? (
-            <EmptyState title={`No ${active.label} mocks yet`} copy={`Add ${active.label} sectional attempts to see trends here.`} />
-          ) : (
-            <>
-              <div className="mock-analysis-charts-grid">
-                <ChartShell title="Score Trend" subtitle="Keep the score story isolated to this subject only.">
-                  <ScoreTrendChart data={active.trend} color="#22c55e" />
-                </ChartShell>
-
-                <ChartShell title="Accuracy Trend" subtitle="Accuracy stays separate so precision remains visible.">
-                  <AccuracyTrendChart data={active.trend} color="#38bdf8" />
-                </ChartShell>
-
-                <ChartShell title="Percentile Trend" subtitle="See whether this subject is climbing against the field over time.">
-                  <PercentileTrendChart data={active.trend} color="#a855f7" />
-                </ChartShell>
-
-                <ChartShell title="Attempt Analysis" subtitle="Track attempted versus total questions over time.">
-                  <AttemptsChart data={active.trend} />
-                </ChartShell>
-              </div>
-
-              <section className="mock-analysis-ai-box">
-                <div className="mock-analysis-chart-head">
-                  <div>
-                    <h2>AI Insight Box</h2>
-                    <p className="muted">Meaningful, subject-specific analysis based on attempts, accuracy, and trend shape.</p>
-                  </div>
-                </div>
-                <div className="mock-analysis-insights">
-                  {active.insights.map((insight) => (
-                    <article key={insight.title} className="mock-analysis-insight">
-                      <span>{insight.title}</span>
-                      <p>{insight.body}</p>
-                    </article>
-                  ))}
-                </div>
-              </section>
-            </>
-          )}
-        </motion.section>
-      </AnimatePresence>
+function EmptyState() {
+  return (
+    <section className="analysis-empty-state">
+      <h2>No mocks in this filter</h2>
+      <p className="muted">Change the filters or add a mock to see analysis here.</p>
+      <Link to="/mocks" className="btn primary sm">Add Mock</Link>
     </section>
   )
 }
@@ -728,69 +468,144 @@ function SectionalView({
 export function MockAnalysisPage() {
   const { user } = useAuth()
   const mocks = useMocks(user?.uid)
-  const [tab, setTab] = useState<DashboardTab>('full')
-  const [activeSubject, setActiveSubject] = useState<SectionalSubjectKey>('Maths')
+  const isDesktop = useDesktopDefault()
+  const [dateRange, setDateRange] = useState<DateRangeFilter>('all')
+  const [examFilter, setExamFilter] = useState<ExamFilter>('all')
 
-  const { fullMocks, sectionalMocks } = useMemo(() => splitMocks(mocks), [mocks])
-  const fullSummary = useMemo(() => buildFullMockSummary(fullMocks), [fullMocks])
-  const sectionalSummaries = useMemo(
-    () => sectionalSubjects.map((subject) => buildSectionalSubjectSummary(subject.key, subject.label, sectionalMocks)),
-    [sectionalMocks],
+  const filteredMocks = useMemo(
+    () => mocks.filter((mock) => isWithinDateRange(mock, dateRange) && matchesExamFilter(mock, examFilter)),
+    [dateRange, examFilter, mocks],
   )
-
-  useEffect(() => {
-    const current = sectionalSummaries.find((subject) => subject.key === activeSubject)
-    if (current?.mocks.length) return
-    const firstAvailable = sectionalSummaries.find((subject) => subject.mocks.length)
-    if (firstAvailable) {
-      setActiveSubject(firstAvailable.key)
-    }
-  }, [activeSubject, sectionalSummaries])
+  const orderedMocks = useMemo(() => sortMocksChronologically(filteredMocks), [filteredMocks])
+  const summary = useMemo(() => buildSummary(filteredMocks), [filteredMocks])
+  const compareSnapshot = useMemo(() => buildCompareSnapshot(filteredMocks), [filteredMocks])
+  const insights = useMemo(() => buildInsights(filteredMocks, summary), [filteredMocks, summary])
+  const aiBrief = useMemo(() => buildAiBrief(summary, compareSnapshot), [summary, compareSnapshot])
+  const latestMock = orderedMocks.at(-1)
 
   return (
     <>
-      <header className="page-head">
+      <header className="page-head analysis-page-head">
         <p className="eyebrow">Mocks</p>
         <div className="page-head-row">
           <div>
             <h1>Mock Analysis</h1>
-            <p className="muted">A lighter, chart-first analysis space with separate full-mock and subject-tracker modes.</p>
+            <p className="muted">Performance summary, trends, insights, and the full breakdown without the clutter.</p>
           </div>
-          <Link to="/mocks" className="btn ghost sm">
-            Entry
-          </Link>
+          <Link to="/mocks" className="btn ghost sm">Entry</Link>
         </div>
       </header>
 
-      <section className="mock-analysis-v2">
-        <SegmentedToggle value={tab} onChange={setTab} />
+      <main className="analysis-redesign">
+        <FilterBar
+          dateRange={dateRange}
+          examFilter={examFilter}
+          onDateRangeChange={setDateRange}
+          onExamFilterChange={setExamFilter}
+        />
 
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={tab}
-            initial={{ opacity: 0, y: 18 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -18 }}
-            transition={{ duration: 0.24, ease: [0.4, 0, 0.2, 1] }}
-          >
-            {tab === 'full' ? (
-              fullMocks.length ? (
-                <FullMockView summary={fullSummary} />
-              ) : (
-                <EmptyState title="No full mocks yet" copy="Log full mocks to unlock score, accuracy, and section contribution tracking." />
-              )
-            ) : sectionalMocks.length ? (
-              <SectionalView
-                subjects={sectionalSummaries}
-                activeSubject={activeSubject}
-                onSubjectChange={setActiveSubject}
-              />
-            ) : (
-              <EmptyState title="No sectional mocks yet" copy="Log subject-wise mocks to turn this page into a personal performance tracker." />
-            )}
-          </motion.div>
-        </AnimatePresence>
-      </section>
+        {!filteredMocks.length ? (
+          <EmptyState />
+        ) : (
+          <>
+            <SectionFrame eyebrow="1. Performance Summary" title="Clear in 3 seconds">
+              <AiBriefCard message={aiBrief} />
+              <CompareCard compare={compareSnapshot} />
+              <div className="analysis-summary-grid">
+                <SummaryCard label="Total Mocks" value={String(summary.totalMocks)} hint={latestMock ? `Latest ${formatShortDate(latestMock.createdAt)}` : 'No latest mock'} tone="neutral" icon={<ListChecks size={18} />} />
+                <SummaryCard label="Average Score" value={`${summary.averageScore.toFixed(1)}%`} hint="Across selected mocks" tone={metricTone(summary.averageScore)} icon={<BarChart3 size={18} />} />
+                <SummaryCard label="Best Score" value={`${summary.bestScore.toFixed(1)}%`} hint="Highest score logged" tone={metricTone(summary.bestScore, 80, 55)} icon={<Trophy size={18} />} />
+                <SummaryCard label="Accuracy" value={`${summary.accuracy.toFixed(1)}%`} hint="Average accuracy" tone={metricTone(summary.accuracy)} icon={<Target size={18} />} />
+                <SummaryCard label="Weakest Section" value={summary.weakestSection?.name ?? '--'} hint={summary.weakestSection ? `${summary.weakestSection.averageScore.toFixed(1)}% avg score` : 'No section data'} tone="weak" icon={<TrendingDown size={18} />} />
+                <SummaryCard label="Strongest Section" value={summary.strongestSection?.name ?? '--'} hint={summary.strongestSection ? `${summary.strongestSection.averageScore.toFixed(1)}% avg score` : 'No section data'} tone="good" icon={<TrendingUp size={18} />} />
+              </div>
+            </SectionFrame>
+
+            <SectionFrame eyebrow="2. Visual Analysis" title="Trends over raw numbers">
+              <div className="analysis-chart-grid">
+                <Suspense fallback={<ChartLoader />}>
+                  <ChartCard title="Score Trend">
+                    <ScoreTrendChart data={summary.scoreTrend} />
+                  </ChartCard>
+                  <ChartCard title="Accuracy Trend">
+                    <AccuracyTrendChart data={summary.scoreTrend} />
+                  </ChartCard>
+                  <ChartCard title="Section Performance">
+                    <SectionPerformanceChart data={summary.sectionChart} />
+                  </ChartCard>
+                  <ChartCard title="Attempt vs Accuracy">
+                    <AttemptAccuracyChart data={summary.scoreTrend} />
+                  </ChartCard>
+                </Suspense>
+              </div>
+            </SectionFrame>
+
+            <SectionFrame eyebrow="3. Insights" title="What to act on next">
+              <div className="analysis-insights-grid">
+                {insights.map((insight) => <InsightCard key={insight.id} insight={insight} />)}
+              </div>
+            </SectionFrame>
+
+            <SectionFrame eyebrow="4. Detailed Breakdown" title="Everything else, organized">
+              <div className="analysis-detail-stack">
+                <DetailPanel title="Section-wise performance" icon={<BarChart3 size={18} />} defaultOpen={isDesktop}>
+                  <div className="analysis-table">
+                    {summary.sectionRows.map((row) => (
+                      <div key={row.name} className="analysis-table-row">
+                        <strong>{row.name}</strong>
+                        <span>{row.averageScore.toFixed(1)}% avg score</span>
+                        <span>{row.averageAccuracy.toFixed(1)}% avg accuracy</span>
+                        <span>{row.attempts} attempts</span>
+                      </div>
+                    ))}
+                  </div>
+                </DetailPanel>
+
+                <DetailPanel title="Time analysis" icon={<Clock3 size={18} />} defaultOpen={isDesktop}>
+                  <div className="analysis-mini-grid">
+                    <SummaryCard label="Avg Time" value={`${summary.averageTime.toFixed(1)}m`} hint="Per mock" tone="neutral" icon={<Clock3 size={18} />} />
+                    <SummaryCard label="Attempt Rate" value={`${summary.attemptRate.toFixed(1)}%`} hint="Attempted vs total" tone={metricTone(summary.attemptRate, 80, 55)} icon={<Target size={18} />} />
+                  </div>
+                </DetailPanel>
+
+                <DetailPanel title="Attempt accuracy" icon={<Crosshair size={18} />} defaultOpen={isDesktop}>
+                  <div className="analysis-table">
+                    {orderedMocks.slice(-8).reverse().map((mock) => (
+                      <div key={mock.id} className="analysis-table-row">
+                        <strong>{formatMockTitle(mock)}</strong>
+                        <span>{mock.overall.attempted}/{mock.overall.total} attempted</span>
+                        <span>{mock.overall.accuracy.toFixed(1)}% accuracy</span>
+                        <span>{formatShortDate(mock.createdAt)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </DetailPanel>
+
+                <DetailPanel title="Historical mock list" icon={<CalendarDays size={18} />} defaultOpen={isDesktop}>
+                  <div className="analysis-history-list">
+                    {orderedMocks.slice().reverse().map((mock) => (
+                      <article key={mock.id} className="analysis-history-item">
+                        <div>
+                          <strong>{formatMockTitle(mock)}</strong>
+                          <span>{formatShortDate(mock.createdAt)}</span>
+                        </div>
+                        <div>
+                          <strong>{mock.overall.score}/{mock.overall.total}</strong>
+                          <span>{mock.overall.accuracy.toFixed(1)}% acc</span>
+                        </div>
+                        <div>
+                          <strong>{mock.overall.time}m</strong>
+                          <span>{mock.overall.rank && mock.overall.rank > 0 ? `Rank ${mock.overall.rank}` : 'No rank'}</span>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </DetailPanel>
+              </div>
+            </SectionFrame>
+          </>
+        )}
+      </main>
     </>
   )
 }
